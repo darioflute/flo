@@ -1,0 +1,21 @@
+name: flo
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - jupyterlab
+  - matplotlib
+  - scipy
+  - healpy
+  - h5py
+  - statsmodels
+  - pip
+  - pip:
+      - romancal==1.0.1
+      - pysiaf==0.28.0
+      - stpsf==2.2.0
+variables:
+  STPSF_PATH: "'$HOME'/data/stpsf-data/"
+  CRDS_SERVER_URL: https://roman-crds.stsci.edu
+  CRDS_PATH: "'$HOME'/data/crds_cache/"
+  CRDS_CONTEXT: ''
