@@ -7,6 +7,7 @@ dependencies:
   - matplotlib
   - scipy
   - healpy
+  - healsparse
   - h5py
   - statsmodels
   - pip
@@ -14,6 +15,7 @@ dependencies:
       - romancal==1.0.1
       - pysiaf==0.28.0
       - stpsf==2.2.0
+      - maskfill>=1.1.1
 variables:
   STPSF_PATH: "'$HOME'/data/stpsf-data/"
   CRDS_SERVER_URL: https://roman-crds.stsci.edu
