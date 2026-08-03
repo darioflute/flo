@@ -1,0 +1,8 @@
+
+Copyright 2026 -  Dario Fadda.
+
+flo
+
+This package contains several tools to improve the reduction of the First Look Observation with WFI onboard the Nancy Grace Roman space telescope.
+
+The software has been developed by Dario Fadda (Space Telescope Institute) and it is publicly avaible under the GNU General Public License v3.0.
