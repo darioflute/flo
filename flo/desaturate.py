@@ -56,7 +56,7 @@ def desaturatePsf(L2, stars, output=None):
         # Selection of PSF positions
         dpsf = np.hypot(x[i]-xpsf, y[i]-ypsf)
         idpsf = np.argmin(dpsf)
-        data = psf[1,idpsf]
+        data = psf[idpsf]
         # Compute the PSF down to L2 images' resolution
         br = block_reduce(data[5-dy[i]:-6-dy[i],5-dx[i]:-6-dx[i]], 10, func=np.sum)
         # Selection of subimage
