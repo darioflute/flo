@@ -41,6 +41,10 @@ conda env create -f environment.yml
 
 conda activate flo
 
+Install the package:
+
+pip install -e .
+
 To exit the environment:
 
 conda deactivate flo
