@@ -43,7 +43,7 @@ def desaturatePsf(L2, stars, output=None):
         print('No stars in this image')
         exit
     else:
-        print('There are ',np.sum(idx),' stars')
+        print('There are ',np.sum(idx),' bright stars which will be corrected')
     x, y = x[idx], y[idx]
 
     # Central pixel of subimage and distance of star from central pixel in 1/10 of pixel
@@ -52,6 +52,7 @@ def desaturatePsf(L2, stars, output=None):
     dx = np.floor((x - xx)*10).astype(int)
     dy = np.floor((y - yy)*10).astype(int)
 
+    print('Normalization values for PSFs: ')
     for i in range(len(x)):
         # Selection of PSF positions
         dpsf = np.hypot(x[i]-xpsf, y[i]-ypsf)
@@ -72,7 +73,7 @@ def desaturatePsf(L2, stars, output=None):
         srcext = np.nanmedian(subimage[idx_ext])
         srcbkg = np.nanmedian(subimage[idx_bkg])
         normalization = (srcext - srcbkg) / (psfext - psfbkg)
-        print(normalization)
+        print(i, normalization)
         subimage[idx_int] = br[idx_int] * normalization
         image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = subimage
 
