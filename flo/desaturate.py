@@ -23,8 +23,8 @@ def desaturatePsf(L2, stars, output=None):
         wcs = dm.meta.wcs
 
     # Select the correct PSF
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"data") # data directory in the distribution
-    with h5py.File(os.path.join(path, 'epsf_'+wfioptelement+'.h5'), 'r') as hdf5_file:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),'..',"data") # data directory in the distribution
+    with h5py.File(os.path.join(path,'epsf_'+wfioptelement+'.h5'), 'r') as hdf5_file:
         psf = hdf5_file[wfidetector][:]
 
     # Centers of the empirical PSFs
