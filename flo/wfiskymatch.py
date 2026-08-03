@@ -134,7 +134,7 @@ def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000,
     print('Median bkg rms ', np.nanmedian(bkg.background_rms))
     if err is not None:
         print('Median err     ', np.nanmedian(err))
-    segment_map = detect_sources(convolved_data, threshold, npixels=10)
+    segment_map = detect_sources(convolved_data, threshold, n_pixels=10)
     cat = SourceCatalog(data0, segment_map, convolved_data=convolved_data)
 
     # Select sources to be masked
@@ -278,9 +278,14 @@ def computeOverlaps(files):
     overlap = csc_array((data, (row, col)), shape=(nfiles,nfiles))
     return overlap
 
-def addOffset(L2, offset=0, output=None):
+def addOffset(L2, offset=0, output=None, outdir=None):
     """
     Add an offset to the data of a L2 WFI file
+
+    L2:      original L2 product
+    offset:  offset to subtract from the L2
+    output:  name of output file
+    outdir:  name of output directory
     """
     import roman_datamodels as rdm
     import os
@@ -289,10 +294,16 @@ def addOffset(L2, offset=0, output=None):
         infile = os.path.abspath(L2)
         path, filename = os.path.split(infile)
         filename, ext = os.path.splitext(os.path.split(infile)[1])
-        output = os.path.join(path, filename[:-5]+'_off_cal'+ext)    
+        if outdir is None:
+            output = os.path.join(path, filename[:-4]+'_off_cal'+ext)
+        else:
+            output = os.path.join(outdir, filename[:-4]+'_off_cal'+ext)
 
     with rdm.open(L2) as dm:
         dm.data += offset
-        dm.save(output)
+        if outdir is None:
+            dm.save(output)
+        else:
+            dm.save(os.path.join(outdir, output))
 
     return 1
