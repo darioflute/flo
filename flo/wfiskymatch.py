@@ -1,4 +1,4 @@
-def pixmatch(files, outfile="offsets", verbose=False, offsets=None):
+def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5):
     """
     Input:
 
@@ -50,6 +50,11 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None):
             apix = hpimage['pixel']
             aval = hpimage['value']
             aunc2 = hpimage['unc']**2
+            idx = aval > 0
+            apix = apix[idx]
+            aval = aval[idx]
+            aunc2 =aunc2[idx]
+            
         if offsets is not None:
             aval += offsets[i]
         for j in range(i+1, nfiles):
@@ -59,10 +64,16 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None):
                     bpix = hpimage['pixel']
                     bval = hpimage['value']
                     bunc2 = hpimage['unc']**2
+                    idx = bval > 0
+                    bpix = bpix[idx]
+                    bval = bval[idx]
+                    bunc2 =bunc2[idx]
                     common_elements, aidx, bidx = np.intersect1d(apix, bpix, return_indices=True)
                 if offsets is not None:
                     bval += offsets[j]
-                if len(common_elements) > 0:
+                if len(common_elements) > minoverlap:
+                    if verbose:
+                        print(i, j, len(common_elements))
                     a_ij = - np.sum(1/(aunc2[aidx] + bunc2[bidx]))
                     I_ij = - np.sum((aval[aidx]-bval[bidx])/(aunc2[aidx] + bunc2[bidx]))
                     col.extend([i,j])
@@ -142,17 +153,21 @@ def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000,
     roundsources = cat.label[ecc]
     mask = np.isin(segment_map.data, roundsources)
 
+    # Mask negative values (below 3*sigma under the background)
+    idx = data0 < -3 * bkg.background_rms
+    mask[idx] = True
+    
     # Mask bad pixels if dq is available
     if dq is not None:
         from roman_datamodels.dqflags import pixel
-        idx = dq == pixel.GOOD.value
-        mask[~idx] = True
+        idx = dq == pixel.DO_NOT_USE.value
+        mask[idx] = True
 
     # Return mask
     return mask
 
 
-def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11):
+def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False):
     """
     Reproject an ASDF WFI image to a Healpix tessellation with 3" pixels
 
@@ -184,7 +199,7 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11):
         
     start_time = time.time()
     # 2. Mask point sources and bad pixels
-    mask = maskSources(data, dq=dq, fwhm=1, areathreshold=1000)    
+    mask = maskSources(data, dq=dq, fwhm=1, areathreshold=1000)
     # 3. Image and errors are block reduced by a factor nblock
     from astropy.nddata import block_reduce
     data[mask] = np.nan
@@ -192,12 +207,13 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11):
     data = block_reduce(data, nblock, func=np.nanmean)
     err = block_reduce(err, nblock, func=np.nanmean)
     # Impainting
-    from maskfill import maskfill
-    idx = ~np.isfinite(data)
-    if np.sum(idx) > 0:
-        mask1 = np.zeros(np.shape(data))
-        mask1[idx] = 1
-        data,_ = maskfill(data, mask1, operator='median' )
+    if inpainting:
+        from maskfill import maskfill
+        idx = ~np.isfinite(data)
+        if np.sum(idx) > 0:
+            mask1 = np.zeros(np.shape(data))
+            mask1[idx] = 1
+            data,_ = maskfill(data, mask1, operator='median' )
     # 4. Healsparse map
     from healsparse import healSparseMap as hspm
     import healpy as hp
@@ -226,8 +242,8 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11):
     yinds = yinds/nblock - (nblock-1) * 0.5
     coords = np.array([yinds, xinds])
     ## order of the spline interpolation: 1 is bilinear (does not create noticeable border effects)
-    values = map_coordinates(data, coords, output=None, order = 1, cval=np.nan)
-    errvalues = map_coordinates(err, coords, output=None, order = 1, cval=np.nan)
+    values = map_coordinates(data.astype(np.float64), coords, output=None, order = 1, cval=np.nan)
+    errvalues = map_coordinates(err.astype(np.float64), coords, output=None, order = 1, cval=np.nan)
     # Update only possible with float64 !
     hsp_map.update_values_pix(upx, values.astype(np.float64))
     # 6. Save pixels with finite values
