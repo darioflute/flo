@@ -41,7 +41,7 @@ def desaturatePsf(L2, stars, output=None):
     idx = (x >= 17) & (x < 4088-17) & (y >= 17) & (y < 4088-17)  
     if np.sum(idx) == 0:
         print('No stars in this image')
-        exit
+        return 0
     else:
         print('There are ',np.sum(idx),' bright stars which will be corrected')
     x, y = x[idx], y[idx]
