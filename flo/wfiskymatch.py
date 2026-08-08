@@ -204,8 +204,8 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False):
     from astropy.nddata import block_reduce
     data[mask] = np.nan
     nblock = 7*2
-    data = block_reduce(data, nblock, func=np.nanmean)
-    err = block_reduce(err, nblock, func=np.nanmean)
+    data = block_reduce(data, nblock, func=np.nanmedian) # nanmedian is more robust than nanmean ...
+    err = block_reduce(err, nblock, func=np.nanmedian)
     # Impainting
     if inpainting:
         from maskfill import maskfill
