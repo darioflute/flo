@@ -14,7 +14,7 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
     import h5py
     import numpy as np
     import os
-    from astropy.stats import biweight_location
+    from astropy.stats import biweight_location, biweight_scale
     
     row = []
     col = []
@@ -50,10 +50,13 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
             apix = hpimage['pixel']
             aval = hpimage['value']
             aunc2 = hpimage['unc']**2
-            idx = aval > 0
+            vloc, vscale = biweight_location(aval), biweight_scale(aval)
+            sloc, sscale = biweight_location(aunc2), biweight_scale(aunc2)
+            idx = (aval > vloc - 3*vscale) & (aval < vloc + 5*vscale) & (aunc2 > sloc - 3*sscale) & (aunc2 < sloc+5*sscale)
             apix = apix[idx]
             aval = aval[idx]
-            aunc2 =aunc2[idx]
+            aunc2 = aunc2[idx]
+            ncov = len(apix)
             
         if offsets is not None:
             aval += offsets[i]
@@ -64,18 +67,22 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
                     bpix = hpimage['pixel']
                     bval = hpimage['value']
                     bunc2 = hpimage['unc']**2
-                    idx = bval > 0
+                    vloc, vscale = biweight_location(bval), biweight_scale(bval)
+                    sloc, sscale = biweight_location(bunc2), biweight_scale(bunc2)
+                    idx = (bval > vloc - 3*vscale) & (bval < vloc + 5*vscale) & (bunc2 > sloc - 3*sscale) & (bunc2 < sloc+5*sscale)
                     bpix = bpix[idx]
                     bval = bval[idx]
-                    bunc2 =bunc2[idx]
+                    bunc2 = bunc2[idx]
                     common_elements, aidx, bidx = np.intersect1d(apix, bpix, return_indices=True)
                 if offsets is not None:
                     bval += offsets[j]
-                if len(common_elements) > minoverlap:
+                if (len(common_elements) > 0):
                     if verbose:
                         print(i, j, len(common_elements))
-                    a_ij = - np.sum(1/(aunc2[aidx] + bunc2[bidx]))
-                    I_ij = - np.sum((aval[aidx]-bval[bidx])/(aunc2[aidx] + bunc2[bidx]))
+                    #a_ij = - np.sum(1/(aunc2[aidx] + bunc2[bidx]))
+                    #I_ij = - np.sum((aval[aidx]-bval[bidx])/(aunc2[aidx] + bunc2[bidx]))
+                    a_ij = - np.mean(1/(aunc2[aidx] + bunc2[bidx]))
+                    I_ij = - np.mean((aval[aidx]-bval[bidx])/(aunc2[aidx] + bunc2[bidx]))
                     col.extend([i,j])
                     row.extend([j,i])
                     data.extend([a_ij, a_ij])
@@ -89,6 +96,140 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
     col.extend(ii)
     data.extend(D)
     A = csc_array((data, (row, col)), shape=(nfiles,nfiles))
+
+    epsilon = spsolve(A, B)
+    #delta = - np.nanmedian(epsilon)
+    delta = - biweight_location(epsilon)
+    epsilon += delta
+
+    # Save offsets with file names
+    import h5py
+    if outfile.endswith('.h5'):
+        pass
+    else:
+        outfile += '.h5'
+
+    filenames = []
+    for file in files:
+        filepath, filebase = os.path.split(file)
+        filename = filebase.split('.')[0]
+        filenames.append(filename)
+        
+    with h5py.File(outfile, 'w') as hdf5_file:
+        d = hdf5_file.create_dataset('offsets', shape=len(epsilon), dtype='float32') 
+        d[:] = epsilon
+        ds = hdf5_file.create_dataset('files', shape=len(files), dtype=h5py.string_dtype(), compression="gzip")
+        ds[:] = filenames
+        
+    return epsilon
+
+
+def pixmatch2(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5):
+    """
+    Input:
+
+      files, list of files with images and WCS (can be compressed fits)
+
+    Output:
+
+      offsets, array of offsets
+    
+    """
+    from scipy.sparse import csc_array
+    from scipy.sparse.linalg import spsolve
+    import h5py
+    import numpy as np
+    import os
+    from astropy.stats import biweight_location, biweight_scale
+    
+    nfiles = len(files)
+    B = np.zeros(nfiles)
+    D = np.zeros(nfiles)
+    a_ij = np.zeros((nfiles, nfiles))
+    b_ij = np.zeros((nfiles, nfiles))
+
+    # Rough overlap using the coverage extension
+    coverage = []
+    for file in files:
+        with h5py.File(file, 'r') as hdf5_file:
+            cov = hdf5_file['hpcoverage'][:]
+            coverage.append(cov)
+    xcorr = np.zeros((nfiles,nfiles))
+    for i in range(nfiles-1):
+        a = coverage[i]
+        for j in range(i+1, nfiles):
+            b = coverage[j]
+            common, aidx, bidx = np.intersect1d(a, b, return_indices=True)
+            if len(common) > 0:
+                xcorr[i,j] = 1
+                xcorr[j,i] = 1
+    if verbose:
+        print('There is a total of {0:n} overlaps'.format(int(np.sum(xcorr))))
+    
+    # Detailed computation for xcorr==1 only
+    for i in range(nfiles-1):
+        if verbose:
+            print('.', end='')
+        with h5py.File(files[i], 'r') as hdf5_file:
+            hpimage = hdf5_file['hpimage'][:]
+            apix = hpimage['pixel']
+            aval = hpimage['value']
+            aunc2 = hpimage['unc']**2
+            vloc, vscale = biweight_location(aval), biweight_scale(aval)
+            sloc, sscale = biweight_location(aunc2), biweight_scale(aunc2)
+            idx = (aval > vloc - 3*vscale) & (aval < vloc + 5*vscale) & (aunc2 > sloc - 3*sscale) & (aunc2 < sloc+5*sscale)
+            idx = np.isfinite(aval) & np.isfinite(aunc2)
+            apix = apix[idx]
+            aval = aval[idx]
+            aunc2 = aunc2[idx]
+            
+        if offsets is not None:
+            aval += offsets[i]
+        for j in range(i+1, nfiles):
+            if xcorr[i,j] == 1:
+                with h5py.File(files[j], 'r') as hdf5_file:
+                    hpimage = hdf5_file['hpimage'][:]
+                    bpix = hpimage['pixel']
+                    bval = hpimage['value']
+                    bunc2 = hpimage['unc']**2
+                    vloc, vscale = biweight_location(bval), biweight_scale(bval)
+                    sloc, sscale = biweight_location(bunc2), biweight_scale(bunc2)
+                    idx = (bval > vloc - 3*vscale) & (bval < vloc + 5*vscale) & (bunc2 > sloc - 3*sscale) & (bunc2 < sloc+5*sscale)
+                    idx = np.isfinite(bval) & np.isfinite(bunc2)
+                    bpix = bpix[idx]
+                    bval = bval[idx]
+                    bunc2 = bunc2[idx]
+                    common_elements, aidx, bidx = np.intersect1d(apix, bpix, return_indices=True)
+                if offsets is not None:
+                    bval += offsets[j]
+                if len(common_elements) > minoverlap:
+                    if verbose:
+                        print(i, j, len(common_elements))
+                    a_ij[i,j] = np.sum(1/(aunc2[aidx] + bunc2[bidx]))
+                    b_ij[i,j] = np.sum((aval[aidx]-bval[bidx])/(aunc2[aidx] + bunc2[bidx]))
+                    a_ij[j,i] = a_ij[i,j]
+                    b_ij[j,i] = - b_ij[i,j]
+
+    row = []
+    col = []
+    data = []
+    for i in range(nfiles):
+        B[i] = -np.sum(b_ij[i,:])
+        row.append(i)
+        col.append(i)
+        data.append(np.sum(a_ij[i,:]))
+        for j in range(nfiles):
+            if a_ij[i,j] > 0:
+                data.append(-a_ij[i,j])
+                row.append(i)
+                col.append(j)
+
+    A = csc_array((data, (row, col)), shape=(nfiles,nfiles))
+
+    idx = np.isfinite(data)
+    print('A ', np.sum(~idx))
+    idx = np.isfinite(B)
+    print('B ', np.sum(~idx))
 
     epsilon = spsolve(A, B)
     #delta = - np.nanmedian(epsilon)
