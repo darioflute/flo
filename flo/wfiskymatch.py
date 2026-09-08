@@ -52,7 +52,7 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
             aunc2 = hpimage['unc']**2
             vloc, vscale = biweight_location(aval), biweight_scale(aval)
             sloc, sscale = biweight_location(aunc2), biweight_scale(aunc2)
-            idx = (aval > vloc - 3*vscale) & (aval < vloc + 5*vscale) & (aunc2 > sloc - 3*sscale) & (aunc2 < sloc+5*sscale)
+            idx = (aval > vloc - 3*vscale) & (aval < vloc + 10*vscale) & (aunc2 > sloc - 3*sscale) & (aunc2 < sloc+5*sscale)
             apix = apix[idx]
             aval = aval[idx]
             aunc2 = aunc2[idx]
@@ -69,7 +69,7 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
                     bunc2 = hpimage['unc']**2
                     vloc, vscale = biweight_location(bval), biweight_scale(bval)
                     sloc, sscale = biweight_location(bunc2), biweight_scale(bunc2)
-                    idx = (bval > vloc - 3*vscale) & (bval < vloc + 5*vscale) & (bunc2 > sloc - 3*sscale) & (bunc2 < sloc+5*sscale)
+                    idx = (bval > vloc - 3*vscale) & (bval < vloc + 10*vscale) & (bunc2 > sloc - 3*sscale) & (bunc2 < sloc+5*sscale)
                     bpix = bpix[idx]
                     bval = bval[idx]
                     bunc2 = bunc2[idx]
