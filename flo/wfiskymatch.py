@@ -336,8 +336,11 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False):
         err = dm.err.copy()
         wcs = dm.meta.wcs
         dq = dm.dq.copy()
+        dn2mjy = dm.meta.photometry.conversion_megajanskys
     print('file ', filename,' read in ', time.time() - start_time)
-        
+
+    # Convert data to MJy/sr
+    data *= dn2mjy
     start_time = time.time()
     # 2. Mask point sources and bad pixels
     mask = maskSources(data, dq=dq, fwhm=1, areathreshold=1000)
@@ -457,7 +460,8 @@ def addOffset(L2, offset=0, output=None, outdir=None):
             output = os.path.join(outdir, filename[:-4]+'_off_cal'+ext)
 
     with rdm.open(L2) as dm:
-        dm.data += offset
+        dn2mjy = dm.meta.photometry.conversion_megajanskys
+        dm.data += offset/dn2mjy  # Add offsets in DN/s
         if outdir is None:
             dm.save(output)
         else:
