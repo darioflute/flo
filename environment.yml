@@ -13,7 +13,7 @@ dependencies:
   - reproject
   - pip
   - pip:
-      - romancal==1.0.1
+      - romancal==1.1.0
       - pysiaf==0.28.0
       - stpsf==2.2.0
       - maskfill>=1.1.1
