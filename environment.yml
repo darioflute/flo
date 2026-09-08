@@ -10,7 +10,7 @@ dependencies:
   - healsparse
   - h5py
   - statsmodels
-  - reproject
+  - reproject==0.21
   - pip
   - pip:
       - romancal==1.1.0
