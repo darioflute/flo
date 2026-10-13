@@ -3,7 +3,7 @@ import pysiaf
 from typing import Union
 import copy
 
-def gaiastars(ra, dec, radius=1.0, star=0.7, maglim=16.5, obs_time='2026-10-31T00:00:00'):
+def gaiastars(ra, dec, radius=1.0, star=0.5, maglim=16.5, obs_time='2026-10-31T00:00:00'):
     """
     Inputs
     ------
