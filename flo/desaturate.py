@@ -44,7 +44,9 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
     srcbkg = np.nanmedian(subimage[idx_bkg])
     normalization = (srcext - srcbkg) / (psfext - psfbkg)
     #print(i, normalization)
-    subimage[idx_int] = br[idx_int] * normalization
+    # If the normalization is positive, the PSF correction makes sense
+    if normalization > 0:
+        subimage[idx_int] = br[idx_int] * normalization
     return subimage
 
     
