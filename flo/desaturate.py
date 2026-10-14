@@ -31,7 +31,6 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
     else:
         r_int = 11
     r_ext = r_int + 2
-    #print('rnan ', rnan)
 
     # Computation of normalization and substitution
     distance = np.hypot(xv-dx*0.1,yv-dy*0.1)
@@ -45,6 +44,8 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
     normalization = (srcext - srcbkg) / (psfext - psfbkg)
     #print(i, normalization)
     # If the normalization is positive, the PSF correction makes sense
+    # Also increase the internal radius by 1 to include eventual isolated bad pixels
+    idx_int = distance <= (r_int+1)
     if normalization > 0:
         subimage[idx_int] = br[idx_int] * normalization
     return subimage
