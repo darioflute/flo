@@ -1,3 +1,159 @@
+def wfipixmatch(files, outfile="offsets", verbose=False, minoverlap=5):
+    """
+    Input:
+
+         files, list of background files
+
+    Output:
+
+         offsets, list of offsets to apply to the original images
+    """
+    from scipy.sparse import csc_array
+    from scipy.sparse.linalg import spsolve
+    import h5py
+    import numpy as np
+    import os
+    from astropy.stats import biweight_location, biweight_scale
+
+    # Find groups of detectors (wfi01-wfi18)
+    # A) strip name of file
+    filenames = []
+    for file in files:
+        directory, filename = os.path.split(file)
+        filenames.append(filename[:25])
+    # B) find 18 detectors groups
+    filegroups = []
+    ufiles = np.unique(filenames)    
+    for ufile in ufiles:
+        matches = [item for item in files if ufile in item]
+        filegroups.append(matches)
+    
+    row = []
+    col = []
+    data = []
+    ngroups = len(filegroups)
+    B = np.zeros(ngroups)
+    D = np.zeros(ngroups)
+
+    # Rough overlap using the coverage extension
+    coverage = []
+    for filegroup in filegroups:
+        covgroup = []
+        for file in filegroup:
+            with h5py.File(file, 'r') as hdf5_file:
+                cov = hdf5_file['hpcoverage'][:]
+                covgroup.extend(cov)
+        coverage.append(covgroup)
+        
+    xcorr = np.zeros((ngroups,ngroups))
+    for i in range(ngroups-1):
+        a = coverage[i]
+        for j in range(i+1, ngroups):
+            b = coverage[j]
+            common, aidx, bidx = np.intersect1d(a, b, return_indices=True)
+            if len(common) > 0:
+                xcorr[i,j] = 1
+                xcorr[j,i] = 1
+    if verbose:
+        print('There is a total of {0:n} overlaps'.format(int(np.sum(xcorr))))
+     
+
+    # Detailed computation for xcorr==1 only
+    for i in range(ngroups-1):
+        if verbose:
+            print('.', end='')
+        for file in filegroups[i]:
+            apix = []
+            aval = []
+            aunc2 = []
+            with h5py.File(file, 'r') as hdf5_file:
+                hpimage = hdf5_file['hpimage'][:]
+                apix.extend(hpimage['pixel'])
+                aval.extend(hpimage['value'])
+                aunc2.extend(hpimage['unc']**2)
+            ncov = len(apix)
+            apix = np.array(apix)
+            aval = np.array(aval)
+            aunc2 = np.array(aunc2)
+            
+        for j in range(i+1, ngroups):
+            if xcorr[i,j] == 1:
+                bpix = []
+                bval = []
+                bunc2 = []
+                for file in filegroups[j]:
+                    with h5py.File(file, 'r') as hdf5_file:
+                        hpimage = hdf5_file['hpimage'][:]
+                        bpix.extend(hpimage['pixel'])
+                        bval.extend(hpimage['value'])
+                        bunc2.extend(hpimage['unc']**2)
+                bpix = np.array(bpix)
+                bval = np.array(bval)
+                bunc2 = np.array(bunc2)
+                common_elements, aidx, bidx = np.intersect1d(apix, bpix, return_indices=True)
+                if (len(common_elements) > 0):
+                    if verbose:
+                        print(i, j, len(common_elements))
+                    a_ij = - np.mean(1/(aunc2[aidx] + bunc2[bidx]))
+                    I_ij = - np.mean((aval[aidx]-bval[bidx])/(aunc2[aidx] + bunc2[bidx]))
+                    col.extend([i,j])
+                    row.extend([j,i])
+                    data.extend([a_ij, a_ij])
+                    B[i] += I_ij
+                    B[j] -= I_ij
+                    D[i] -= a_ij
+                    D[j] -= a_ij
+    
+    ii = np.arange(ngroups)
+    row.extend(ii)
+    col.extend(ii)
+    data.extend(D)
+    A = csc_array((data, (row, col)), shape=(ngroups,ngroups))
+    # Check if array is connected
+    from scipy.sparse.csgraph import connected_components 
+    n_components, labels = connected_components(csgraph=A, directed=True, return_labels=True)
+    if n_components > 1:
+        print('The images are separated in ', n_components,' components')
+        print('Separate the images in different groups before matching them')
+        return 0
+
+    else:
+        epsilon = spsolve(A, B)
+        #delta = - np.nanmedian(epsilon)
+        delta = - biweight_location(epsilon)
+        epsilon += delta
+
+        # Save offsets with file names
+        import h5py
+        if outfile.endswith('.h5'):
+            pass
+        else:
+            outfile += '.h5'
+
+        # Associate epsilon to the input files
+
+        ufiles = list(ufiles)
+        fnames = []
+        fepsilon = []
+        for filename, file in zip(filenames, files):
+            idx = ufiles.index(filename)
+            filepath, filebase = os.path.split(file)
+            fnames.append(filebase.split('.')[0])
+            fepsilon.append(epsilon[idx])
+
+        #fepsilon = np.array(fepsilon)
+        #fnames = np.array(fnames)
+        
+        with h5py.File(outfile, 'w') as hdf5_file:
+            d = hdf5_file.create_dataset('offsets', shape=len(fepsilon), dtype='float32') 
+            d[:] = fepsilon
+            ds = hdf5_file.create_dataset('files', shape=len(files), dtype=h5py.string_dtype(), compression="gzip")
+            ds[:] = fnames
+        
+        return np.array(fepsilon)
+
+
+        
 def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5):
     """
     Input:
@@ -50,12 +206,12 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
             apix = hpimage['pixel']
             aval = hpimage['value']
             aunc2 = hpimage['unc']**2
-            vloc, vscale = biweight_location(aval), biweight_scale(aval)
-            sloc, sscale = biweight_location(aunc2), biweight_scale(aunc2)
-            idx = (aval > vloc - 3*vscale) & (aval < vloc + 10*vscale) & (aunc2 > sloc - 3*sscale) & (aunc2 < sloc+5*sscale)
-            apix = apix[idx]
-            aval = aval[idx]
-            aunc2 = aunc2[idx]
+            #vloc, vscale = biweight_location(aval), biweight_scale(aval)
+            #sloc, sscale = biweight_location(aunc2), biweight_scale(aunc2)
+            #idx = (aval > vloc - 3*vscale) & (aval < vloc + 10*vscale) & (aunc2 > sloc - 3*sscale) & (aunc2 < sloc+5*sscale)
+            #apix = apix[idx]
+            #aval = aval[idx]
+            #aunc2 = aunc2[idx]
             ncov = len(apix)
             
         if offsets is not None:
@@ -67,12 +223,12 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
                     bpix = hpimage['pixel']
                     bval = hpimage['value']
                     bunc2 = hpimage['unc']**2
-                    vloc, vscale = biweight_location(bval), biweight_scale(bval)
-                    sloc, sscale = biweight_location(bunc2), biweight_scale(bunc2)
-                    idx = (bval > vloc - 3*vscale) & (bval < vloc + 10*vscale) & (bunc2 > sloc - 3*sscale) & (bunc2 < sloc+5*sscale)
-                    bpix = bpix[idx]
-                    bval = bval[idx]
-                    bunc2 = bunc2[idx]
+                    #vloc, vscale = biweight_location(bval), biweight_scale(bval)
+                    #sloc, sscale = biweight_location(bunc2), biweight_scale(bunc2)
+                    #idx = (bval > vloc - 3*vscale) & (bval < vloc + 10*vscale) & (bunc2 > sloc - 3*sscale) & (bunc2 < sloc+5*sscale)
+                    #bpix = bpix[idx]
+                    #bval = bval[idx]
+                    #bunc2 = bunc2[idx]
                     common_elements, aidx, bidx = np.intersect1d(apix, bpix, return_indices=True)
                 if offsets is not None:
                     bval += offsets[j]
@@ -97,31 +253,40 @@ def pixmatch(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5
     data.extend(D)
     A = csc_array((data, (row, col)), shape=(nfiles,nfiles))
 
-    epsilon = spsolve(A, B)
-    #delta = - np.nanmedian(epsilon)
-    delta = - biweight_location(epsilon)
-    epsilon += delta
+    # Check if array is connected
+    from scipy.sparse.csgraph import connected_components 
+    n_components, labels = connected_components(csgraph=A, directed=True, return_labels=True)
+    if n_components > 1:
+        print('The images are separated in ', n_components,' components')
+        print('Separate the images in different groups before matching them')
+        return 0
 
-    # Save offsets with file names
-    import h5py
-    if outfile.endswith('.h5'):
-        pass
     else:
-        outfile += '.h5'
+        epsilon = spsolve(A, B)
+        #delta = - np.nanmedian(epsilon)
+        delta = - biweight_location(epsilon)
+        epsilon += delta
 
-    filenames = []
-    for file in files:
-        filepath, filebase = os.path.split(file)
-        filename = filebase.split('.')[0]
-        filenames.append(filename)
+        # Save offsets with file names
+        import h5py
+        if outfile.endswith('.h5'):
+            pass
+        else:
+            outfile += '.h5'
+
+        filenames = []
+        for file in files:
+            filepath, filebase = os.path.split(file)
+            filename = filebase.split('.')[0]
+            filenames.append(filename)
         
-    with h5py.File(outfile, 'w') as hdf5_file:
-        d = hdf5_file.create_dataset('offsets', shape=len(epsilon), dtype='float32') 
-        d[:] = epsilon
-        ds = hdf5_file.create_dataset('files', shape=len(files), dtype=h5py.string_dtype(), compression="gzip")
-        ds[:] = filenames
+        with h5py.File(outfile, 'w') as hdf5_file:
+            d = hdf5_file.create_dataset('offsets', shape=len(epsilon), dtype='float32') 
+            d[:] = epsilon
+            ds = hdf5_file.create_dataset('files', shape=len(files), dtype=h5py.string_dtype(), compression="gzip")
+            ds[:] = filenames
         
-    return epsilon
+        return epsilon
 
 
 def pixmatch2(files, outfile="offsets", verbose=False, offsets=None, minoverlap=5):
@@ -258,15 +423,24 @@ def pixmatch2(files, outfile="offsets", verbose=False, offsets=None, minoverlap=
     return epsilon
 
 
-def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000, eccthreshold=0.8, nsigma=0.7):
+def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000, eccthreshold=1, nsigma=0.7):
 
     import numpy as np
 
     # Define background
     from photutils.background import Background2D, MedianBackground
     data0 = data.copy()
+
+    # Inpaint saturated pixels
+    from roman_datamodels.dqflags import pixel    
+    #from maskfill import maskfill
+    #idx = (dq & pixel.DO_NOT_USE.value) != 0
+    #mask1 = np.zeros(np.shape(data))
+    #mask1[idx] = 1
+    #data0,_ = maskfill(data0, mask1, operator='median' )
+    
     bkg_estimator = MedianBackground()
-    bkg = Background2D(data0, (block,block), filter_size=(3, 3), bkg_estimator=bkg_estimator)
+    bkg = Background2D(data0, (block,block), filter_size=(3,3), bkg_estimator=bkg_estimator,exclude_percentile=12.0)
     data0 -= bkg.background
 
     # Convolve with Gaussian kernel
@@ -298,17 +472,42 @@ def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000,
     idx = data0 < -3 * bkg.background_rms
     mask[idx] = True
     
-    # Mask bad pixels if dq is available
+    # Mask bad pixels marked as "Do Not Use" if dq is available
     if dq is not None:
         from roman_datamodels.dqflags import pixel
-        idx = dq == pixel.DO_NOT_USE.value
+        idx = (dq & pixel.DO_NOT_USE.value) != 0
         mask[idx] = True
 
+    # Search for clusters of uncorrected saturated pixels which are possible stars not in GAIA bright stars
+    from scipy.ndimage import label, find_objects
+    nan_mask = np.isnan(data) & ((dq & pixel.SATURATED.value) != 0)
+    labeled_mask, num_features = label(nan_mask)
+    slices = find_objects(labeled_mask)
+    Y, X = np.ogrid[:4088, :4088]
+    nb = 14*3
+    for sl in slices:
+        if sl is not None:
+            yi, ye = sl[0].start, sl[0].stop
+            xi, xe = sl[1].start, sl[1].stop
+            if (xe-xi)*(ye-yi) > 1: # minimal area considered including 
+                # Find barycenter of the cluster
+                condition = nan_mask[yi:ye, xi:xe] == 1
+                nnan = np.sum(np.where(condition))
+                if nnan > 1:
+                    idnan = np.argwhere(condition)
+                    centroid = np.mean(idnan, axis=0)
+                    Yc, Xc = yi+centroid[0], xi+centroid[1]
+                    #print(np.sqrt(nnan/3.1415))
+                    #rb  = nnan/3.1415 * nb**2 # nb x radius
+                    rb = nb**2
+                    cmask = (X - Xc)**2 + (Y - Yc)**2 <= rb
+                    mask[cmask] = True
+        
     # Return mask
     return mask
 
 
-def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False):
+def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False,savefits=False):
     """
     Reproject an ASDF WFI image to a Healpix tessellation with 3" pixels
 
@@ -358,6 +557,12 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False):
             mask1 = np.zeros(np.shape(data))
             mask1[idx] = 1
             data,_ = maskfill(data, mask1, operator='median' )
+    # Save background in fits file
+    if savefits:
+        from astropy.io import fits
+        outfits =  os.path.join(outdir,filename+'.fits')
+        hdu = fits.PrimaryHDU(data=data)
+        hdu.writeto(outfits, overwrite=True)
     # 4. Healsparse map
     from healsparse import healSparseMap as hspm
     import healpy as hp
@@ -438,7 +643,7 @@ def computeOverlaps(files):
     overlap = csc_array((data, (row, col)), shape=(nfiles,nfiles))
     return overlap
 
-def addOffset(L2, offset=0, output=None, outdir=None):
+def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
     """
     Add an offset to the data of a L2 WFI file
 
@@ -458,13 +663,12 @@ def addOffset(L2, offset=0, output=None, outdir=None):
             output = os.path.join(path, filename[:-4]+'_off_cal'+ext)
         else:
             output = os.path.join(outdir, filename[:-4]+'_off_cal'+ext)
+            if verbose:
+                print('output ', output)
 
     with rdm.open(L2) as dm:
         dn2mjy = dm.meta.photometry.conversion_megajanskys
         dm.data += offset/dn2mjy  # Add offsets in DN/s
-        if outdir is None:
-            dm.save(output)
-        else:
-            dm.save(os.path.join(outdir, output))
+        dm.save(output)
 
     return 1
