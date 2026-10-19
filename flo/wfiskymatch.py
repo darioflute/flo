@@ -549,8 +549,6 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False,savefit
     with rdm.open(crds_result['area']) as pam:
         pamdata = pam.data.copy()
 
-    p = pamdata.ravel()
-    print(np.median(p), np.min(p), np.max(p))
 
     # Consider the different area of pixels on the sky
     # See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
@@ -672,6 +670,7 @@ def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
     """
     import roman_datamodels as rdm
     import os
+    import crds
     
     if output is None:
         infile = os.path.abspath(L2)
@@ -685,8 +684,22 @@ def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
                 print('output ', output)
 
     with rdm.open(L2) as dm:
-        dn2mjy = dm.meta.photometry.conversion_megajanskys
-        dm.data += offset/dn2mjy  # Add offsets in DN/s
+        meta = dm.meta
+        dn2mjy = meta.photometry.conversion_megajanskys
+        
+        crds_result = crds.getreferences({'ROMAN.META.INSTRUMENT.DETECTOR': meta.instrument.detector,
+                                      'ROMAN.META.INSTRUMENT.NAME': meta.instrument.name,
+                                      'ROMAN.META.EXPOSURE.START_TIME': meta.exposure.start_time.isot}, 
+                                     observatory='roman', reftypes=['area'], ignore_cache=False)
+        with rdm.open(crds_result['area']) as pam:
+            pamdata = pam.data.copy()
+
+
+        # Consider the different area of pixels on the sky
+        # See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
+        offsets = offset/(pamdata * dn2mjy)
+        
+        dm.data += offsets  # Add offsets in DN/s
         dm.save(output)
 
     return 1
