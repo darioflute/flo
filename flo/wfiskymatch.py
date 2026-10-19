@@ -522,21 +522,40 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False,savefit
     import os
     import numpy as np
     import time
+    import crds
+    
     # 0. Extract filename [assumed to be the part before the first dot from the left]
     filepath, filebase = os.path.split(infile)
     filename = filebase.split('.')[0]
     # 1. Read the ASDF file
-    import roman_datamodels as rd
+    import roman_datamodels as rdm
     from roman_datamodels.dqflags import pixel
 
     start_time = time.time()
-    with rd.open(infile) as dm:
+    with rdm.open(infile) as dm:
         data = dm.data.copy()
         err = dm.err.copy()
         wcs = dm.meta.wcs
         dq = dm.dq.copy()
-        dn2mjy = dm.meta.photometry.conversion_megajanskys
+        meta = dm.meta.copy()
+        
+    dn2mjy = meta.photometry.conversion_megajanskys
     print('file ', filename,' read in ', time.time() - start_time)
+    
+    crds_result = crds.getreferences({'ROMAN.META.INSTRUMENT.DETECTOR': meta.instrument.detector,
+                                  'ROMAN.META.INSTRUMENT.NAME': meta.instrument.name,
+                                  'ROMAN.META.EXPOSURE.START_TIME': meta.exposure.start_time.isot}, 
+                                 observatory='roman', reftypes=['area'], ignore_cache=False)
+    with rdm.open(crds_result['area']) as pam:
+        pamdata = pam.data.copy()
+
+    p = pamdata.ravel()
+    print(np.median(p), np.min(p), np.max(p))
+
+    # Consider the different area of pixels on the sky
+    # See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
+    data *= pamdata
+    err *= pamdata
 
     # Convert data to MJy/sr
     data *= dn2mjy
@@ -648,7 +667,6 @@ def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
     Add an offset to the data of a L2 WFI file
 
     L2:      original L2 product
-    offset:  offset to subtract from the L2
     output:  name of output file
     outdir:  name of output directory
     """
