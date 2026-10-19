@@ -109,8 +109,9 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
     nan_mask = np.isnan(image) & ((dq & pixel.SATURATED.value) != 0)
     labeled_mask, num_features = label(nan_mask)
     slices = find_objects(labeled_mask)
-    xx, yy = np.arange(4088), np.arange(4088)
-    X, Y = np.meshgrid(xx, yy)
+    Y, X = np.ogrid[:4088, :4088]
+    #xx, yy = np.arange(4088), np.arange(4088)
+    #X, Y = np.meshgrid(xx, yy)
     n = 0
     xb, yb = [], []
     for i, sl in enumerate(slices):
@@ -119,10 +120,13 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
             xi, xe = sl[1].start, sl[1].stop
             if (xe-xi)*(ye-yi) > minarea:
                 # Find barycenter of the cluster
-                idnan = np.where(nan_mask[yi:ye, xi:xe] == 1)
-                bX, bY = X[yi:ye, xi:xe], Y[yi:ye, xi:xe]
-                yb.append(np.mean(bY[idnan]))
-                xb.append(np.mean(bX[idnan]))
+                idnan = np.argwhere(nan_mask[yi:ye, xi:xe] == 1)
+                centroid = np.mean(idnan, axis=0)
+                #bX, bY = X[yi:ye, xi:xe], Y[yi:ye, xi:xe]
+                yb.append(yi+centroid[0])
+                xb.append(xi+centroid[1])
+                #yb.append(np.mean(bY[idnan]))
+                #xb.append(np.mean(bX[idnan]))
                 n += 1
 
     if n > 0:
