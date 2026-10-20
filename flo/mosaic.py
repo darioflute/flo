@@ -359,3 +359,61 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
         afout = asdf.AsdfFile()
         afout.tree['roman'] = skycellref
         afout.write_to('roman_wfi_skycells_0001.asdf')  
+        
+def stitchCells(files, outname = 'mosaic'):
+    """
+    
+
+    Parameters
+    ----------
+    files : list
+        List of files to stitch together
+    outname : string
+        Name of output FITS file. The default is 'mosaic'.
+
+    Returns
+    -------
+    None.
+
+    """
+    from astropy.io import fits
+    import roman_datamodels as rdm
+    import numpy as np
+    
+    nx = 0
+    ny = 0
+    for file in files:
+        nx_ = int(file[-16:-14])
+        ny_ = int(file[-13:-11])
+        nx = nx_ if nx_ > nx else nx
+        ny = ny_ if ny_ > ny else ny
+    nx += 1
+    ny += 1
+
+    nx *= 5000
+    ny *= 5000
+    image = np.zeros((ny, nx))
+    for file in files:
+        nx_ = int(file[-16:-14])
+        ny_ = int(file[-13:-11])
+        with rdm.open(file) as dm:
+            data = dm.data.copy()
+            meta = dm.meta.copy()
+        image[ny_ * 5000: ny_ * 5000 + 5000, nx_ * 5000:nx_*5000+5000] = data
+
+    header = meta.wcs.to_fits()[0]
+    hdu = fits.PrimaryHDU(data=image)
+    hdu.header['crpix1'] = nx/2
+    hdu.header['crpix2'] = ny/2
+    hdu.header['crval1'] = header['crval1']
+    hdu.header['crval2'] = header['crval2']
+    hdu.header['cdelt1'] = -0.11/3600.
+    hdu.header['cdelt2'] = 0.11/3600.
+    hdu.header['ctype1'] = "RA---TAN"
+    hdu.header['ctype2'] = "DEC--TAN"
+    hdu.header['cunit1'] = "deg"
+    hdu.header['cunit2'] = "deg"
+    
+    hdu.writeto(outname+'.fits', overwrite='True')   
+
+    
