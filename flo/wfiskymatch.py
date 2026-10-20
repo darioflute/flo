@@ -423,7 +423,7 @@ def pixmatch2(files, outfile="offsets", verbose=False, offsets=None, minoverlap=
     return epsilon
 
 
-def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000, eccthreshold=1, nsigma=0.7):
+def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000, eccthreshold=0.5, nsigma=0.7):
 
     import numpy as np
 
@@ -552,11 +552,13 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False,savefit
 
     # Consider the different area of pixels on the sky
     # See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
+    
     data *= pamdata
     err *= pamdata
 
     # Convert data to MJy/sr
     data *= dn2mjy
+    err *= dn2mjy
     start_time = time.time()
     # 2. Mask point sources and bad pixels
     mask = maskSources(data, dq=dq, fwhm=1, areathreshold=1000)
@@ -697,7 +699,7 @@ def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
 
         # Consider the different area of pixels on the sky
         # See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
-        offsets = offset/(pamdata * dn2mjy)
+        offsets = offset / dn2mjy / pamdata
         
         dm.data += offsets  # Add offsets in DN/s
         dm.save(output)
