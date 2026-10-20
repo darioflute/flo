@@ -1,4 +1,4 @@
-def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, members, nx=5000, ny=5000, pixscale=0.055/3600):
+def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, members, outname, nx=5000, ny=5000, pixscale=0.055/3600):
     """
     Generate a JSON structure identical to skycells for romancal
 
@@ -45,12 +45,12 @@ def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, members, nx=5000, n
         "dec_center": dec0c,
         "nx": nx,
         "ny": ny,
-        "orientat": -1.3823617696762085,
+        "orientat": ra0-ra0c,
         "orientat_projection_center": 0.0
     }
 
     product = {
-        "name": "_stars_"+target, 
+        "name": "_"+outname+"_"+target, 
         "members": []
     }
 
@@ -64,10 +64,10 @@ def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, members, nx=5000, n
         "code_version": "0.22.0",
         "target": target,
         "degraded_status": "No known degraded exposures in association.",
-        "program": "StarF",
-        "data_release_id": "stars",
+        "program": outname,
+        "data_release_id": outname,
         "constraints": "No constraints",
-        "asn_id": "a3001",
+        "asn_id": "a0001",
         "asn_pool": "none",
         "skycell_wcs_info": skycell_info,
         "products":[product]
@@ -75,8 +75,19 @@ def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, members, nx=5000, n
 
     return result
 
+def angle360(x):
+    # Express angles inside 0<= x <= 360
+    if x < 0:
+        x += 360
+    elif x > 360:
+        x -= 360
+    return x
 
-def make_cell_asn(files, npix=5000, pixscale=0.11, outname='mosaic_'):
+
+
+
+
+def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
     """
     This code generates json files to reproject and coadd a list of files
     in a series of square tiles with the same center of projection.
@@ -121,12 +132,11 @@ def make_cell_asn(files, npix=5000, pixscale=0.11, outname='mosaic_'):
     ramin, ramax, decmin, decmax = [], [], [], []     
     for file in files:
         with rdm.open(file) as dm:
-            wcs = dm.meta.wcs
-            a0, d0 = wcs(2044.5,2044.5)
-            a1, d1 = wcs(0,0)
-            a2, d2 = wcs(4087,0)
-            a3, d3 = wcs(4087,4087)
-            a4, d4 = wcs(0,4087)
+            a0, d0 = dm.meta.wcs(2044.5,2044.5)
+            a1, d1 = dm.meta.wcs(0,0)
+            a2, d2 = dm.meta.wcs(4087,0)
+            a3, d3 = dm.meta.wcs(4087,4087)
+            a4, d4 = dm.meta.wcs(0,4087)
             ra0.append(a0)
             dec0.append(d0)
             ra.append([a1,a2,a3,a4])
@@ -148,10 +158,10 @@ def make_cell_asn(files, npix=5000, pixscale=0.11, outname='mosaic_'):
     amax = max(ramax)
     amin = min(ramin)
     
-    da = max([amax-a0, a0-amin])
-    dd = max([dmax-d0, d0-dmin])
+    da = max([amax-crval1, crval1-amin])
+    dd = max([dmax-crval2, crval2-dmin])
     
-    nx = 2 * 15 * da * np.cos(crval2 * np.pi / 180) / pixscale
+    nx = 2 * da * np.cos(crval2 * np.pi / 180)  * 3600 / pixscale
     ny = 2 * dd * 3600 / pixscale
     
     # Find size of the cell
@@ -202,9 +212,14 @@ def make_cell_asn(files, npix=5000, pixscale=0.11, outname='mosaic_'):
     a3, d3 = wcsobj(x3, y3)
     a4, d4 = wcsobj(x4, y4)
 
+    # Part of the file name (tile center coords)
+    dsign = 'm' if (crval1 < 0) else 'p'
+    ra0_, dec0_ = round(crval1), round(np.abs(crval2))
+    # Format of name
+    namefmt = '{0:03d}{1:s}{2:02d}x{3:02d}y{4:02d}'
+    npix2 = (npix-1)/2
     for i in range(nrow):
         for j in range(ncol):
-
             pcell = [(a1[i,j],d1[i,j]),(a2[i,j],d2[i,j]),(a3[i,j],d3[i,j]),(a4[i,j],d4[i,j])]
             members = []
             # Find the overlapping images
@@ -212,13 +227,135 @@ def make_cell_asn(files, npix=5000, pixscale=0.11, outname='mosaic_'):
                 pimage = [(ra_[k],dec_[k]) for k in range(4)]
                 if convex_polygons_intersect(pcell, pimage):
                     members.append(file)
-                print(i,j,members)
-    
-    
-            target = '160p57x61y60'
-            cell_json = create_cell_json(target, x0[i,j], y0[i,j], ra0[i,j], dec0[i,j], a0[i,j], d0[i,j], members)
-
-            filename = 'test.asn'
+            print(i,j,members)
+            # Target definition
+            x0_ = col[i,j] + ncol//2
+            y0_ = row[i,j] + nrow//2
+            xpix = x0t - x0[i,j] + npix2
+            ypix = y0t - y0[i,j] + npix2
+            target = namefmt.format(ra0_, dsign, dec0_, x0_, y0_)
+            cell_json = create_cell_json(target, xpix, ypix, crval1, crval2, 
+                                         a0[i,j], d0[i,j], members, outname)
+            filename = outname + '_' + target + '.asn'
             with io.open(filename, mode='w') as f:
                 str_= json.dumps(cell_json, indent=4, separators=(',', ': '), ensure_ascii=False)
                 f.write(str_)
+                
+    # Fake skycell reference file
+    from astropy.time import Time
+    from datetime import time,date,datetime
+    import asdf
+    import roman_datamodels._stnode as stnode
+
+    d = date(2025, 1, 1)
+    t = time(0, 0, 0)
+    startdate = datetime.combine(d, t)
+
+    # Structure of the tile metadata
+    wcs_tile_dtype = [
+        ('index', 'i4'),
+        ('ra_tangent', 'f8'),      # RA tile center  [crval1]
+        ('dec_tangent', 'f8'),     # Dec tile center [crval2]
+        ('ra_min', 'f8'),         # Limits in RA of the tile
+        ('ra_max', 'f8'),         # 
+        ('dec_min', 'f8'),        # Limits in Dec of the tile
+        ('dec_max', 'f8'),        #
+        ('orientat', 'f4'),       # Orientation projection [crota2]
+        ('x_tangent', 'f8'), # x coord of projection region center
+        ('y_tangent', 'f8'), # y coord of projection region center
+        ('nx', 'i4'), # x-size of projection region in pixels
+        ('ny', 'i4'), # y-size of projection region in pixels
+        ('skycell_start','i4'),           # First cell index
+        ('skycell_end','i4'),             # Last cell index
+    ]
+
+    # Structure of the cell metadata
+    wcs_cell_dtype = [
+        ('name', 'U16'),
+        ('ra_center', 'f8'),     # center of the cell
+        ('dec_center', 'f8'),    # center of the cell
+        ('orientat', 'f4'),      # orientation of the cell
+        ('x_tangent', 'f8'), # x coordinate of projection center in pixels [crpix1]
+        ('y_tangent', 'f8'), # y coordinate of projection center in pixels [crpix2]
+        ('ra_corn1', 'f8'),      # RA corner 1
+        ('dec_corn1', 'f8'),
+        ('ra_corn2', 'f8'),
+        ('dec_corn2', 'f8'),
+        ('ra_corn3', 'f8'),
+        ('dec_corn3', 'f8'),
+        ('ra_corn4', 'f8'),
+        ('dec_corn4', 'f8')
+    ]
+
+    ntiles = 1
+    tiles = np.empty(ntiles, dtype=wcs_tile_dtype)
+    cells = np.empty(0,  dtype=wcs_cell_dtype)
+    
+    tile = tiles[0]
+    tile['index'] = 0
+    tile['ra_tangent'] = '{0:.17g}'.format(crval1)
+    tile['dec_tangent'] = '{0:.17g}'.format(crval2)
+    tile['ra_min'] = '{0:.17g}'.format(angle360(amin))
+    tile['ra_max'] = '{0:.17g}'.format(angle360(amax))
+    tile['dec_min'] = '{0:.17g}'.format(dmin)
+    tile['dec_max'] = '{0:.17g}'.format(dmax)       
+    tile['skycell_start'] = len(cells)     # First cell index
+    tile['x_tangent'] = x0t
+    tile['y_tangent'] = y0t
+    tile['nx'] = nx
+    tile['ny'] = ny     
+    tile['orientat'] = 0 # Orientation projection
+
+    icell = 0
+    cell = np.empty(ncol * nrow, dtype=wcs_cell_dtype)
+    for i in range(nrow):
+        for j in range(ncol):
+            # Target definition
+            x0_ = col[i,j] + ncol//2
+            y0_ = row[i,j] + nrow//2
+            xpix = x0t - x0[i,j] + npix2
+            ypix = y0t - y0[i,j] + npix2
+            target = namefmt.format(ra0_, dsign, dec0_, x0_, y0_)
+            cell[icell]['name'] = namefmt.format(ra0_, dsign, dec0_, x0_, y0_)
+            cell[icell]['ra_center'] = '{0:.17g}'.format(a0[i,j]) # cell center
+            cell[icell]['dec_center'] = '{0:.17g}'.format(d0[i,j])
+            cell[icell]['orientat'] = crval1 - a0[i,j] # orientation wrt tile
+            cell[icell]['x_tangent'] = xpix # position of tile center
+            cell[icell]['y_tangent'] = ypix
+            cell[icell]['ra_corn1'] = '{0:.17g}'.format(a1[i,j])
+            cell[icell]['dec_corn1'] = '{0:.17g}'.format(d1[i,j])
+            cell[icell]['ra_corn2'] = '{0:.17g}'.format(a2[i,j])
+            cell[icell]['dec_corn2'] = '{0:.17g}'.format(d2[i,j])
+            cell[icell]['ra_corn3'] = '{0:.17g}'.format(a3[i,j])
+            cell[icell]['dec_corn3'] = '{0:.17g}'.format(d3[i,j])
+            cell[icell]['ra_corn4'] = '{0:.17g}'.format(a4[i,j])
+            cell[icell]['dec_corn4'] = '{0:.17g}'.format(d4[i,j])
+            icell += 1
+    # Concatenate cells to the cells from previous tiles
+    cells = np.concatenate([cells, cell])
+    tile['skycell_end'] = len(cells)       # Last cell index
+    meta = {
+        "reftype": "SKYCELLS",
+        "pedigree": "GROUND",
+        "description": "Roman Telescope has adopted a tessellation scheme of the celestial sphere to obtain mosaics stored in the Roman archive. This tessellation partitions the sphere into 4058 sky tiles whose centers and limits in declination are defined by a Healpix double tessellation scheme with Nside = 13.",
+        "author": "Dario Fadda",
+        "useafter": Time(startdate),
+        "telescope": "ROMAN",
+        "origin": "STSCI",
+        "instrument": {
+            "name": "WFI"
+        },
+        "vparity": -1,
+        "nxy_skycell": npix,
+        "skycell_border_pixels": 0,
+        "pixel_scale": pixscale,
+    }
+    skycellref = stnode.SkycellsRef()
+    skycellref['meta'] = meta
+    skycellref['projection_regions'] = tiles
+    skycellref['skycells'] =  cells
+    skycellref['datamodel_name'] = "RomanSkycellsRefModel"
+    with asdf.AsdfFile() as afout:
+        afout = asdf.AsdfFile()
+        afout.tree['roman'] = skycellref
+        afout.write_to('roman_wfi_skycells_0001.asdf')  
