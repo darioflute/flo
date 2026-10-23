@@ -103,6 +103,9 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
         for i in range(len(x)):
             subimage = image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18]
             image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = normalizePSF(x[i], y[i], dx[i], dy[i], psf, subimage)
+            # Put dq to 0
+            dq[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = 0
+            
 
     # Now consider the clusters of uncorrected saturated pixels which are possible stars not in GAIA
     from scipy.ndimage import label, find_objects
@@ -148,6 +151,7 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
         for i in range(len(xb)):
             subimage = image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18]
             image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = normalizePSF(xb[i], yb[i], dx[i], dy[i], psf, subimage)
+            dq[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = 0
 
     if (ngaia + n) == 0:
         print('No saturated sources in this image')
@@ -163,4 +167,5 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
         output = os.path.join(path, filename+'_us'+ext)    
     with rdm.open(L2) as dm:
         dm.data = image
+        dm.dq = dq
         dm.save(output)
