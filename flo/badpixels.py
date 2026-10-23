@@ -35,6 +35,13 @@ def maskNegativePixels(file):
     # Put data to NaN and flag pixel as do_not_use
     data[idx] = np.nan
     dq[idx] |= pixel.DO_NOT_USE.value
+    
+    # Mask pixels without non-linearity correction
+    idx = (dq & pixel.NO_LIN_CORR) != 0
+    data[idx] = np.nan
+    dq[idx] |= pixel.DO_NOT_USE.value
+    
+    
     # Overwrite file
     with rdm.open(file) as dm:
         dm.data = data
