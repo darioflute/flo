@@ -1,4 +1,4 @@
-def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, members, outname, nx=5000, ny=5000, pixscale=0.055/3600):
+def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, orient, members, outname, nx=5000, ny=5000, pixscale=0.055/3600):
     """
     Generate a JSON structure identical to skycells for romancal
 
@@ -46,7 +46,7 @@ def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, members, outname, n
         "nx": nx,
         "ny": ny,
         "orientat": ra0-ra0c,
-        "orientat_projection_center": 0.0
+        "orientat_projection_center": orient
     }
 
     product = {
@@ -84,10 +84,51 @@ def angle360(x):
     return x
 
 
+def computeOrientation(wcs):
+    """
+    Compute the orientation of a L2 product from header
+
+    Parameters
+    ----------
+    wcs : TYPE
+        wcs from the meta
+
+    Returns
+    -------
+    theta: 
+        orientation angle
+
+    """
+    import numpy as np
+    
+    hdr = wcs.to_fits()[0]
+    cd = np.zeros((2,2))
+    try:
+        cd[0,0] = hdr['CD1_1']
+        cd[0,1] = hdr['CD1_2']
+        cd[1,0] = hdr['CD2_1']
+        cd[1,1] = hdr['CD2_2']
+    except:
+        cd[0,0] = hdr['PC1_1']
+        cd[0,1] = hdr['PC1_2']
+        cd[1,0] = hdr['PC2_1']
+        cd[1,1] = hdr['PC2_2']
+        
+
+    scale_x = np.hypot(cd[0, 0], cd[1, 0])
+    scale_y = np.hypot(cd[0, 1], cd[1, 1])
+
+    # Normalize the CD matrix to get the rotation/parity matrix
+    rot_matrix = cd / [[scale_x, scale_x], [scale_y, scale_y]]
+
+    # Rotation angle
+    theta_rad = np.arctan2(rot_matrix[1, 0], rot_matrix[0, 0])
+    theta_deg = np.degrees(theta_rad)
+
+    return scale_x, theta_deg   
 
 
-
-def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
+def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='mosaic', refdir='./'):
     """
     This code generates json files to reproject and coadd a list of files
     in a series of square tiles with the same center of projection.
@@ -129,7 +170,8 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
 
     ra0, dec0 = [], []
     ra, dec = [], []  # List of vertices
-    ramin, ramax, decmin, decmax = [], [], [], []     
+    ramin, ramax, decmin, decmax = [], [], [], []   
+    orientation = []
     for file in files:
         with rdm.open(file) as dm:
             a0, d0 = dm.meta.wcs(2044.5,2044.5)
@@ -145,11 +187,18 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
             ramax.append(max([a1,a2,a3,a4]))
             decmin.append(min([d1,d2,d3,d4]))
             decmax.append(max([d1,d2,d3,d4]))
+            cd, cr = computeOrientation(dm.meta.wcs)
+            orientation.append(cr)
 
     # Compute the center of final mosaic as barycenter of the image centers
     
     crval1 = np.mean(ra0)
     crval2 = np.mean(dec0)
+    
+    # Compute the median orientation
+    
+    medorientation = np.nanmedian(np.array(orientation))
+    print(f'Median orientation is {medorientation} degrees')
     
     # Find size of final mosaic (symmetric wrt the central coordinate)
     
@@ -158,11 +207,38 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
     amax = max(ramax)
     amin = min(ramin)
     
-    da = max([amax-crval1, crval1-amin])
-    dd = max([dmax-crval2, crval2-dmin])
+    # Compute tentative wcs of tile
+    print('orientation ', medorientation)
+    pix = pixscale / 3600.
+    x0t, y0t = 0, 0
+    pix = pixscale / 3600.
+    pixelshift = models.Shift(-x0t) & models.Shift(-y0t)
+    pixelscale = models.Scale(-pix) & models.Scale(pix) # 0.1 arcsec/pixel
+    tangent_projection = models.Pix2Sky_TAN()
+    celestial_rotation = models.RotateNative2Celestial(crval1, crval2, -medorientation)
+    det2sky = pixelshift | pixelscale | tangent_projection | celestial_rotation
+    detector_frame = cf.Frame2D(name="detector", axes_names=("x", "y"), unit=(u.pix, u.pix))
+    sky_frame = cf.CelestialFrame(reference_frame=coord.ICRS(), name='icrs', unit=(u.deg, u.deg))
+    wcsobj = wcs.WCS([(detector_frame, det2sky),(sky_frame, None)])
     
-    nx = 2 * da * np.cos(crval2 * np.pi / 180)  * 3600 / pixscale
-    ny = 2 * dd * 3600 / pixscale
+    
+    x, y = [], []
+    for a, d in zip(ra, dec):
+        x1, y1 = wcsobj.backward_transform(a[0], d[0])
+        x2, y2 = wcsobj.backward_transform(a[1], d[1])
+        x3, y3 = wcsobj.backward_transform(a[2], d[2])
+        x4, y4 = wcsobj.backward_transform(a[3], d[3])
+        x.extend([x1,x2,x3,x4])
+        y.extend([y1,y2,y3,y4])
+        
+    nx = max(x) - min(x)
+    ny = max(y) - min(y)
+    
+    
+    #da = max([amax-crval1, crval1-amin])
+    #dd = max([dmax-crval2, crval2-dmin])
+    #nx = 2 * da * np.cos(crval2 * np.pi / 180)  * 3600 / pixscale
+    #ny = 2 * dd * 3600 / pixscale
     
     # Find size of the cell
     if (nx < npix) & (ny < npix):
@@ -186,11 +262,10 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
     
     # Astrometry of the tile
     x0t, y0t = (nx-1)/2 , (ny-1)/2
-    pix = pixscale / 3600.
     pixelshift = models.Shift(-x0t) & models.Shift(-y0t)
     pixelscale = models.Scale(-pix) & models.Scale(pix) # 0.1 arcsec/pixel
     tangent_projection = models.Pix2Sky_TAN()
-    celestial_rotation = models.RotateNative2Celestial(crval1, crval2, 180.)
+    celestial_rotation = models.RotateNative2Celestial(crval1, crval2, -medorientation)
     det2sky = pixelshift | pixelscale | tangent_projection | celestial_rotation
     detector_frame = cf.Frame2D(name="detector", axes_names=("x", "y"), unit=(u.pix, u.pix))
     sky_frame = cf.CelestialFrame(reference_frame=coord.ICRS(), name='icrs', unit=(u.deg, u.deg))
@@ -227,25 +302,27 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
                 pimage = [(ra_[k],dec_[k]) for k in range(4)]
                 if convex_polygons_intersect(pcell, pimage):
                     members.append(file)
-            print(i,j,members)
-            # Target definition
-            x0_ = col[i,j] + ncol//2
-            y0_ = row[i,j] + nrow//2
-            xpix = x0t - x0[i,j] + npix2
-            ypix = y0t - y0[i,j] + npix2
-            target = namefmt.format(ra0_, dsign, dec0_, x0_, y0_)
-            cell_json = create_cell_json(target, xpix, ypix, crval1, crval2, 
-                                         a0[i,j], d0[i,j], members, outname)
-            filename = outname + '_' + target + '.asn'
-            with io.open(filename, mode='w') as f:
-                str_= json.dumps(cell_json, indent=4, separators=(',', ': '), ensure_ascii=False)
-                f.write(str_)
+            if len(members) > 0:
+                print(i,j,members)
+                # Target definition
+                x0_ = col[i,j] + ncol//2
+                y0_ = row[i,j] + nrow//2
+                xpix = x0t - x0[i,j] + npix2
+                ypix = y0t - y0[i,j] + npix2
+                target = namefmt.format(ra0_, dsign, dec0_, x0_, y0_)
+                cell_json = create_cell_json(target, xpix, ypix, crval1, crval2, 
+                                             a0[i,j], d0[i,j], medorientation, members, outname)
+                filename = outname + '_' + target + '.asn'
+                with io.open(filename, mode='w') as f:
+                    str_= json.dumps(cell_json, indent=4, separators=(',', ': '), ensure_ascii=False)
+                    f.write(str_)
                 
     # Fake skycell reference file
     from astropy.time import Time
     from datetime import time,date,datetime
     import asdf
     import roman_datamodels._stnode as stnode
+    import os
 
     d = date(2025, 1, 1)
     t = time(0, 0, 0)
@@ -295,8 +372,8 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
     tile['index'] = 0
     tile['ra_tangent'] = '{0:.17g}'.format(crval1)
     tile['dec_tangent'] = '{0:.17g}'.format(crval2)
-    tile['ra_min'] = '{0:.17g}'.format(angle360(amin))
-    tile['ra_max'] = '{0:.17g}'.format(angle360(amax))
+    tile['ra_min'] = '{0:.17g}'.format(amin)
+    tile['ra_max'] = '{0:.17g}'.format(amax)
     tile['dec_min'] = '{0:.17g}'.format(dmin)
     tile['dec_max'] = '{0:.17g}'.format(dmax)       
     tile['skycell_start'] = len(cells)     # First cell index
@@ -304,7 +381,7 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
     tile['y_tangent'] = y0t
     tile['nx'] = nx
     tile['ny'] = ny     
-    tile['orientat'] = 0 # Orientation projection
+    tile['orientat'] = 180-medorientation # Orientation projection
 
     icell = 0
     cell = np.empty(ncol * nrow, dtype=wcs_cell_dtype)
@@ -358,7 +435,7 @@ def make_cells_asn(files, npix=5000, pixscale=0.11, outname='mosaic'):
     with asdf.AsdfFile() as afout:
         afout = asdf.AsdfFile()
         afout.tree['roman'] = skycellref
-        afout.write_to('roman_wfi_skycells_0001.asdf')  
+        afout.write_to(os.path.join(refdir, 'roman_wfi_skycells_0001.asdf')) 
         
 def stitchCells(files, outname = 'mosaic'):
     """
@@ -389,31 +466,77 @@ def stitchCells(files, outname = 'mosaic'):
         ny = ny_ if ny_ > ny else ny
     nx += 1
     ny += 1
+    
+    nxc = (nx-1)//2
+    nyc = (ny-1)//2
 
     nx *= 5000
     ny *= 5000
-    image = np.zeros((ny, nx))
+    image = np.full((ny, nx), np.nan)
     for file in files:
         nx_ = int(file[-16:-14])
         ny_ = int(file[-13:-11])
         with rdm.open(file) as dm:
-            data = dm.data.copy()
-            meta = dm.meta.copy()
-        image[ny_ * 5000: ny_ * 5000 + 5000, nx_ * 5000:nx_*5000+5000] = data
+            image[ny_ * 5000: ny_ * 5000 + 5000, nx_ * 5000: nx_ * 5000 + 5000] = dm.data
+            if (nx_ == nxc) & (ny_ == nyc):
+                #meta = dm.meta
+                #header = meta.wcs.to_fits()[0]
+                #crval1 = header['crval1']
+                #crval2 = header['crval2']
+                #cdelt, crota2 = computeOrientation(meta.wcs)
+                cdelt = dm.meta.wcsinfo['pixel_scale']
+                crval1 = dm.meta.wcsinfo['ra_ref']
+                crval2 = dm.meta.wcsinfo['dec_ref']
+                crota2 = -dm.meta.wcsinfo['orientation_ref']
 
-    header = meta.wcs.to_fits()[0]
+    #image = image[::-1, ::-1]
+    #header = meta.wcs.to_fits()[0]
+    ctheta = np.cos(crota2 * np.pi/180)
+    stheta = np.sin(crota2 * np.pi/180)
+    cdelt1 = -cdelt
+    cdelt2 = cdelt
+    
+    # crop image NaN borders
+    nans = np.isnan(image)
+    # Find rows and columns that are NOT completely NaN
+    valid_rows = ~np.all(nans, axis=1)
+    valid_cols = ~np.all(nans, axis=0)
+    if not np.any(valid_rows) or not np.any(valid_cols):
+        print('No valid rows or columns')
+        return 0
+    # Get min and max indices for non-NaN rows and columns
+    row_indices = np.where(valid_rows)[0]
+    col_indices = np.where(valid_cols)[0]
+    r_min, r_max = row_indices[0], row_indices[-1]
+    c_min, c_max = col_indices[0], col_indices[-1]
+    image = image[r_min : r_max + 1, c_min : c_max + 1]
+    crpix1 = nx/2 - c_min
+    crpix2 = ny/2 - r_min
+
     hdu = fits.PrimaryHDU(data=image)
-    hdu.header['crpix1'] = nx/2
-    hdu.header['crpix2'] = ny/2
-    hdu.header['crval1'] = header['crval1']
-    hdu.header['crval2'] = header['crval2']
-    hdu.header['cdelt1'] = -0.11/3600.
-    hdu.header['cdelt2'] = 0.11/3600.
+    hdu.header['wcsaxes'] = 2
+    hdu.header['wcsname'] = 'world'
+    hdu.header['crpix1'] = crpix1
+    hdu.header['crpix2'] = crpix2
+    hdu.header['crval1'] = crval1
+    hdu.header['crval2'] = crval2
+    hdu.header['PC1_1'] =  cdelt1 * ctheta
+    hdu.header['PC1_2'] = -cdelt2 * stheta
+    hdu.header['PC2_1'] =  cdelt1 * stheta
+    hdu.header['PC2_2'] =  cdelt2 * ctheta
+    hdu.header['cdelt1'] = 1.0
+    hdu.header['cdelt2'] = 1.0
     hdu.header['ctype1'] = "RA---TAN"
     hdu.header['ctype2'] = "DEC--TAN"
     hdu.header['cunit1'] = "deg"
     hdu.header['cunit2'] = "deg"
-    
+    hdu.header['LONPOLE'] = 180
+    hdu.header['LATPOLE'] = crval2
+    hdu.header['RADESYS'] = 'ICRS'
+    hdu.header['MJDREF'] = 0.0
+    del hdu.header['EXTEND'] 
     hdu.writeto(outname+'.fits', overwrite='True')   
 
+    print('Rotation angle is: ', crota2)
+    print('Scale is: ', cdelt)
     
