@@ -50,7 +50,7 @@ def create_cell_json(target, x0, y0, ra0, dec0, ra0c, dec0c, orient, members, ou
     }
 
     product = {
-        "name": "_"+outname+"_"+target, 
+        "name": outname+"_"+target, 
         "members": []
     }
 
@@ -128,7 +128,7 @@ def computeOrientation(wcs):
     return scale_x, theta_deg   
 
 
-def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='mosaic', refdir='./'):
+def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir='./'):
     """
     This code generates json files to reproject and coadd a list of files
     in a series of square tiles with the same center of projection.
