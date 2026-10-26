@@ -432,12 +432,21 @@ def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000,
     data0 = data.copy()
 
     # Inpaint saturated pixels
-    from roman_datamodels.dqflags import pixel    
+    #from roman_datamodels.dqflags import pixel    
     #from maskfill import maskfill
     #idx = (dq & pixel.DO_NOT_USE.value) != 0
     #mask1 = np.zeros(np.shape(data))
     #mask1[idx] = 1
     #data0,_ = maskfill(data0, mask1, operator='median' )
+    
+    # Mask pixels with "do not use" or "no lin correction" if dq available
+    if dq is not None:
+        from roman_datamodels.dqflags import pixel
+        idx = (dq & pixel.DO_NOT_USE.value) != 0
+        data0[idx] = np.nan
+        idx = (dq & pixel.NO_LIN_CORR.value) != 0
+        data0[idx] = np.nan
+    
     
     bkg_estimator = MedianBackground()
     bkg = Background2D(data0, (block,block), filter_size=(3,3), bkg_estimator=bkg_estimator,exclude_percentile=12.0)
@@ -472,10 +481,12 @@ def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000,
     idx = data0 < -3 * bkg.background_rms
     mask[idx] = True
     
-    # Mask bad pixels marked as "Do Not Use" if dq is available
+    # Mask bad pixels marked as "Do Not Use" or "No Lin Corr" if dq is available
     if dq is not None:
         from roman_datamodels.dqflags import pixel
         idx = (dq & pixel.DO_NOT_USE.value) != 0
+        mask[idx] = True
+        idx = (dq & pixel.NO_LIN_CORR.value) != 0
         mask[idx] = True
 
     # Search for clusters of uncorrected saturated pixels which are possible stars not in GAIA bright stars
