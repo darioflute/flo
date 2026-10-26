@@ -457,6 +457,10 @@ def stitchCells(files, outname = 'mosaic'):
     import roman_datamodels as rdm
     import numpy as np
     
+    
+    if len(files) == 0:
+        print('No files found')
+        return 0
     nx = 0
     ny = 0
     for file in files:
@@ -466,35 +470,24 @@ def stitchCells(files, outname = 'mosaic'):
         ny = ny_ if ny_ > ny else ny
     nx += 1
     ny += 1
-    
-    nxc = (nx-1)//2
-    nyc = (ny-1)//2
-
     nx *= 5000
     ny *= 5000
     image = np.full((ny, nx), np.nan)
+    
     for file in files:
         nx_ = int(file[-16:-14])
         ny_ = int(file[-13:-11])
         with rdm.open(file) as dm:
             image[ny_ * 5000: ny_ * 5000 + 5000, nx_ * 5000: nx_ * 5000 + 5000] = dm.data
-            if (nx_ == nxc) & (ny_ == nyc):
-                #meta = dm.meta
-                #header = meta.wcs.to_fits()[0]
-                #crval1 = header['crval1']
-                #crval2 = header['crval2']
-                #cdelt, crota2 = computeOrientation(meta.wcs)
-                cdelt = dm.meta.wcsinfo['pixel_scale']
-                crval1 = dm.meta.wcsinfo['ra_ref']
-                crval2 = dm.meta.wcsinfo['dec_ref']
-                crota2 = -dm.meta.wcsinfo['orientation_ref']
-
-    #image = image[::-1, ::-1]
-    #header = meta.wcs.to_fits()[0]
-    ctheta = np.cos(crota2 * np.pi/180)
-    stheta = np.sin(crota2 * np.pi/180)
+            cdelt = dm.meta.wcsinfo['pixel_scale']
+            crval1 = dm.meta.wcsinfo['ra_ref']
+            crval2 = dm.meta.wcsinfo['dec_ref']
+            crota2 = -dm.meta.wcsinfo['orientation_ref']
+ 
     cdelt1 = -cdelt
     cdelt2 = cdelt
+    ctheta = np.cos(crota2 * np.pi/180)
+    stheta = np.sin(crota2 * np.pi/180)
     
     # crop image NaN borders
     nans = np.isnan(image)
