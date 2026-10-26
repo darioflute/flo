@@ -24,30 +24,43 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
     # Compute the PSF down to L2 images' resolution
     br = block_reduce(data[5-dy:-6-dy,5-dx:-6-dx], 10, func=np.sum)
     # Compute number of NaN in subimage and choose correct r_int, r_ext
-    nnan = np.sum(np.isnan(subimage))
-    rnan = np.sqrt(nnan/3.1415)
-    if rnan < 11:
-        r_int = rnan+1
-    else:
-        r_int = 11
-    r_ext = r_int + 2
-
-    # Computation of normalization and substitution
-    distance = np.hypot(xv-dx*0.1,yv-dy*0.1)
-    idx_int = distance <= r_int
-    idx_ext = (distance >= r_int) & (distance < r_ext)
-    idx_bkg = (distance >= r_bkg_int) & (distance < r_bkg_ext)        
-    psfext = np.median(br[idx_ext])
-    psfbkg = np.median(br[idx_bkg])
-    srcext = np.nanmedian(subimage[idx_ext])
-    srcbkg = np.nanmedian(subimage[idx_bkg])
-    normalization = (srcext - srcbkg) / (psfext - psfbkg)
-    #print(i, normalization)
-    # If the normalization is positive, the PSF correction makes sense
-    # Also increase the internal radius by 1 to include eventual isolated bad pixels
-    idx_int = distance <= (r_int+1)
-    if normalization > 0:
-        subimage[idx_int] = br[idx_int] * normalization
+    nanimage = np.isnan(subimage)
+    nnan = np.sum(nanimage)
+    
+    if nnan > 0:
+        # rnan = np.sqrt(nnan/3.1415)
+        # Choose rnan as the distance containing 98% of the NaNs
+        shapeimage = subimage.shape
+        y, x = np.indices(shapeimage) 
+        y0, x0 = shapeimage[0]/2, shapeimage[1]/2
+        distances = np.hypot(x - x0,y - y0)
+        distances_nonzero = distances[ nanimage > 0]
+        rnan = np.percentile(distances_nonzero, 98)
+        
+        if rnan < 11:
+            r_int = rnan+1
+        else:
+            r_int = 11
+        r_ext = r_int + 2
+    
+        # Computation of normalization and substitution
+        distance = np.hypot(xv-dx*0.1,yv-dy*0.1)
+        idx_int = distance <= r_int
+        idx_ext = (distance >= r_int) & (distance < r_ext)
+        idx_bkg = (distance >= r_bkg_int) & (distance < r_bkg_ext)        
+        psfext = np.median(br[idx_ext])
+        psfbkg = np.median(br[idx_bkg])
+        srcext = np.nanmedian(subimage[idx_ext])
+        srcbkg = np.nanmedian(subimage[idx_bkg])
+        normalization = (srcext - srcbkg) / (psfext - psfbkg)
+        #print(i, normalization)
+        # If the normalization is positive, the PSF correction makes sense
+        # Also increase the internal radius by 1 to include eventual isolated bad pixels
+        if rnan < 11:
+            rnan = 11
+        idx_int = distance <= (rnan+1)
+        if normalization > 0:
+            subimage[idx_int] = br[idx_int] * normalization
     return subimage
 
     
