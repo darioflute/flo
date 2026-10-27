@@ -293,8 +293,8 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
     # Format of name
     namefmt = '{0:03d}{1:s}{2:02d}x{3:02d}y{4:02d}'
     npix2 = (npix-1)/2
-    for i in range(nrow):
-        for j in range(ncol):
+    for i in range(ncol):
+        for j in range(nrow):
             pcell = [(a1[i,j],d1[i,j]),(a2[i,j],d2[i,j]),(a3[i,j],d3[i,j]),(a4[i,j],d4[i,j])]
             members = []
             # Find the overlapping images
@@ -385,8 +385,8 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
 
     icell = 0
     cell = np.empty(ncol * nrow, dtype=wcs_cell_dtype)
-    for i in range(nrow):
-        for j in range(ncol):
+    for i in range(ncol):
+        for j in range(nrow):
             # Target definition
             x0_ = col[i,j] + ncol//2
             y0_ = row[i,j] + nrow//2
