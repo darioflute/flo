@@ -46,4 +46,4 @@ def maskNegativePixels(file):
     with rdm.open(file) as dm:
         dm.data = data
         dm.dq = dq
-        dm.save(outfile)   
+        dm.save(file)   
