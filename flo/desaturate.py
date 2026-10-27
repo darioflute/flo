@@ -181,4 +181,4 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
     with rdm.open(L2) as dm:
         dm.data = image
         dm.dq = dq
-        dm.save(output)
+        dm.save(L2)
