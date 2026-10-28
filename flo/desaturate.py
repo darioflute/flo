@@ -98,7 +98,10 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
     # Trasform the list of stars in x, y coordinates and select stars inside image
     ra, dec = stars.ra.deg, stars.dec.deg
     x, y = wcs.backward_transform(ra, dec)
-    idx = (x >= 17) & (x < 4088-17) & (y >= 17) & (y < 4088-17)
+    xx = np.round(x).astype(int)
+    yy = np.round(y).astype(int)
+
+    idx = (xx >= 17) & (xx < 4088-17) & (yy >= 17) & (yy < 4088-17)
     ngaia = np.sum(idx)
     if ngaia == 0:
         print('No GAIA stars in this image')
@@ -147,7 +150,9 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
 
     if n > 0:
         xb, yb = np.array(xb), np.array(yb)
-        idx = (xb >= 17) & (xb < 4088-17) & (yb >= 17) & (yb < 4088-17)
+        xx = np.round(xb).astype(int)
+        yy = np.round(yb).astype(int)
+        idx = (xx >= 17) & (xx < 4088-17) & (yy >= 17) & (yy < 4088-17)
         if np.sum(idx) > 0:
             xb, yb = xb[idx], yb[idx]
             n = len(xb)
