@@ -25,7 +25,7 @@ def maskNegativePixels(file):
     import numpy as np
 
     
-    outfile = file[:-5]+'_ok.asdf'
+    #outfile = file[:-5]+'_ok.asdf'
     with rdm.open(file) as dm:
         data = dm.data.copy()
         dq = dm.dq.copy()
