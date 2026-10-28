@@ -28,7 +28,7 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
     nnan = np.sum(nanimage)
     
     if nnan > 0:
-        # rnan = np.sqrt(nnan/3.1415)
+        #rnan = np.sqrt(nnan/3.1415)
         # Choose rnan as the distance containing 98% of the NaNs
         shapeimage = subimage.shape
         y, x = np.indices(shapeimage) 
@@ -60,7 +60,7 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
             rnan = 11
         idx_int = distance <= (rnan+1)
         if normalization > 0:
-            subimage[idx_int] = br[idx_int] * normalization
+            subimage[idx_int] = srcbkg + br[idx_int] * normalization
     return subimage
 
     
