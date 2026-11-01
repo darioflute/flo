@@ -17,7 +17,7 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
     xv, yv = np.meshgrid(np.arange(35)-17, np.arange(35)-17, indexing='ij')
 
 
-    # Selection of PSF positions
+    # Selection of PSF based on position on the detector
     dpsf = np.hypot(x-xpsf, y-ypsf)
     idpsf = np.argmin(dpsf)
     data = psf[idpsf]
@@ -63,6 +63,93 @@ def normalizePSF(x, y, dx, dy, psf, subimage):
             subimage[idx_int] = srcbkg + br[idx_int] * normalization
     return subimage
 
+def guidewindow(gs, sca):
+    """
+    Compute the correct limits of the guide window. 
+    This routine will be removed once romancal will compute the correct limits
+    
+    Parameters
+    ----------
+    gs : TYPE
+        guide_star from meta of cal file
+    isca : TYPE
+        WFI detector
+
+    Returns
+    -------
+    limits of guide window
+
+    """
+    
+    isca = int(sca[-2:])
+    if isca in [3,6,9,12,15,18]:
+        x1 = gs['window_xstart']-5
+        x2 = gs['window_xstop']-4
+        y1 = gs['window_ystart']-3
+        y2 = gs['window_ystop']-2
+    else:
+        x1 = gs['window_xstart']-3
+        x2 = gs['window_xstop']-2
+        y1 = gs['window_ystart']-5
+        y2 = gs['window_ystop']-4
+
+    return x1, x2, y1, y2
+
+
+def guidewindowPSF(x, y, psf, subimage):
+    """
+    Normalize the PSF to the star in the guide window
+    x,y image coords of the star
+    psf empirical PSF
+    subimage part of the image containing the star
+    """
+    import numpy as np
+    from astropy.nddata import block_reduce
+    
+    # Centers of the empirical PSFs
+    xpsf = np.array([4.0, 2047.5, 4091.0, 4.0, 2047.5, 4091.0, 4.0, 2047.5, 4091.0])
+    ypsf = np.array([4.0, 4.0, 4.0, 2047.5, 2047.5, 2047.5, 4091.0, 4091.0, 4091.0])
+
+    # Selection of PSF based on position on the detector
+    dpsf = np.hypot(x-xpsf, y-ypsf)
+    idpsf = np.argmin(dpsf)
+    data = psf[idpsf]
+    # Compute the PSF down to L2 images' resolution
+    br = block_reduce(data[5:-6,5:-6], 10, func=np.sum)
+    
+    x0, y0 = 17, 17
+    sum0 = np.nansum(subimage[y0-8:y0+8, x0-8:x0+8])
+    sum1 = np.nansum(subimage[y0-9:y0+9, x0-9:x0+9])
+    back1 = np.nanmedian(np.concat((subimage[y0-9:y0-8, x0-9:x0+9].ravel(), 
+                                   subimage[y0+8:y0+9, x0-9:x0+9].ravel(),
+                                   subimage[y0-8:y0+8, x0-9:x0-8].ravel(),
+                                   subimage[y0-8:y0+8, x0+8:x0+9].ravel())))
+    
+    
+    
+    back = np.nanmedian(np.concat((subimage[y0-17:y0-15, x0-17:x0+17].ravel(), 
+                                   subimage[y0+15:y0+17, x0-17:x0+17].ravel(),
+                                   subimage[y0-15:y0+15, x0-17:x0-15].ravel(),
+                                   subimage[y0-15:y0+15, x0+15:x0+17].ravel())))
+    
+    print('back 1', back1)
+    print('back 2', back)
+    
+    ring = sum1 - sum0
+    psum0 = np.sum(br[y0-8:y0+8, x0-8:x0+8])
+    psum1 = np.sum(br[y0-9:y0+9, x0-9:x0+9])
+    pback = np.nanmedian(np.concat((br[y0-17:y0-15, x0-17:x0+17].ravel(), 
+                                    br[y0+15:y0+17, x0-17:x0+17].ravel(),
+                                    br[y0-15:y0+15, x0-17:x0-15].ravel(),
+                                    br[y0-15:y0+15, x0+15:x0+17].ravel())))
+    pring = psum1 - psum0
+    normalization = (ring - back) / (pring - pback)
+    
+    if (normalization > 0) & (back1/back > 1.5):
+        subimage[y0-9:y0+9, x0-9:x0+9] = br[y0-9:y0+9, x0-9:x0+9] * normalization + back
+    return subimage
+
+
     
 def desaturatePsf(L2, stars, output=None, minarea=1):
     """
@@ -87,13 +174,13 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
         dq = dm.dq.copy()
         wfidetector = dm.meta.instrument.detector
         wfioptelement = dm.meta.instrument.optical_element
+        gs = dm.meta.guide_star
         wcs = dm.meta.wcs
 
     # Select the correct PSF
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),'..',"data") # data directory in the distribution
     with h5py.File(os.path.join(path,'epsf_'+wfioptelement+'.h5'), 'r') as hdf5_file:
         psf = hdf5_file[wfidetector][:]
-
 
     # Trasform the list of stars in x, y coordinates and select stars inside image
     ra, dec = stars.ra.deg, stars.dec.deg
@@ -108,6 +195,11 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
     else:
         print(f'There are {ngaia} bright stars which will be corrected')
 
+    # Guide window
+    x1, x2, y1, y2 = guidewindow(gs, wfidetector)
+    xg, yg = round((x1+x2)/2), round((y1+y2)/2)
+    guidestar = False
+
     if ngaia > 0:
         # Central pixel of subimage and distance of star from central pixel in 1/10 of pixel
         x, y = x[idx], y[idx]
@@ -117,11 +209,27 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
         dy = np.floor((y - yy)*10).astype(int)
 
         for i in range(len(x)):
-            subimage = image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18]
-            image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = normalizePSF(x[i], y[i], dx[i], dy[i], psf, subimage)
-            # Put dq to 0
-            dq[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = 0
+            # Check if guide star
+            if np.hypot((xg-xx[i]), (yg-yy[i])) < 2:
+                 # Star in the guide window
+                 subimage = image[yg-17:yg+17, xg-17:xg+17]
+                 image[yg-17:yg+17, xg-17:xg+17] = guidewindowPSF(xg, yg, psf, subimage)
+                 # Put dq to 0
+                 dq[yg-17:yg+17, xg-17:xg+17] = 0
+                 guidestar = True
+            else:   
+                subimage = image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18]
+                image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = normalizePSF(x[i], y[i], dx[i], dy[i], psf, subimage)
+                # Put dq to 0
+                dq[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = 0
             
+    # If the guide star window does not contain a guide star
+    if guidestar is False:
+        print('No guide star in the guide window')
+        subimage = image[yg-17:yg+17, xg-17:xg+17]
+        image[yg-17:yg+17, xg-17:xg+17] = guidewindowPSF(xg, yg, psf, subimage)
+        # Put dq to 0
+        dq[yg-17:yg+17, xg-17:xg+17] = 0
 
     # Now consider the clusters of uncorrected saturated pixels which are possible stars not in GAIA
     from scipy.ndimage import label, find_objects
