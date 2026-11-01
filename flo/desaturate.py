@@ -197,10 +197,17 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
     else:
         print(f'There are {ngaia} bright stars which will be corrected')
 
-    # Guide window
+    # Star in the guide window
     x1, x2, y1, y2 = guidewindow(gs, wfidetector)
     xg, yg = round((x1+x2)/2), round((y1+y2)/2)
-    guidestar = False
+    # star at the center of the guide window
+    subimage = image[yg-17:yg+17, xg-17:xg+17]
+    state, newpsf = guidewindowPSF(xg, yg, psf, subimage)
+    if state:
+        image[yg-17:yg+17, xg-17:xg+17] = newpsf
+        # Put dq to 0
+        dq[yg-17:yg+17, xg-17:xg+17] = 0
+   
 
     if ngaia > 0:
         # Central pixel of subimage and distance of star from central pixel in 1/10 of pixel
@@ -211,40 +218,17 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
         dy = np.floor((y - yy)*10).astype(int)
 
         for i in range(len(x)):
-            # Check if guide star
-            if np.hypot((xg-xx[i]), (yg-yy[i])) < 2:
-                 # Star in the guide window
-                 subimage = image[yg-17:yg+17, xg-17:xg+17]
-                 state, newpsf = guidewindowPSF(xg, yg, psf, subimage)
-                 # Put dq to 0
-                 if state:
-                     image[yg-17:yg+17, xg-17:xg+17] = newpsf
-                     dq[yg-17:yg+17, xg-17:xg+17] = 0
-                 guidestar = True
-            else:   
-                subimage = image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18]
-                image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = normalizePSF(x[i], y[i], dx[i], dy[i], psf, subimage)
-                # Put dq to 0
-                dq[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = 0
-            
-    # If the guide star window does not contain a guide star
-    if guidestar is False:
-        print('No guide star in the guide window')
-        subimage = image[yg-17:yg+17, xg-17:xg+17]
-        state, newpsf = guidewindowPSF(xg, yg, psf, subimage)
-        if state:
-            image[yg-17:yg+17, xg-17:xg+17] = newpsf
+            subimage = image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18]
+            image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = normalizePSF(x[i], y[i], dx[i], dy[i], psf, subimage)
             # Put dq to 0
-            dq[yg-17:yg+17, xg-17:xg+17] = 0
-
+            dq[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18] = 0
+            
     # Now consider the clusters of uncorrected saturated pixels which are possible stars not in GAIA
     from scipy.ndimage import label, find_objects
     nan_mask = np.isnan(image) & ((dq & pixel.SATURATED.value) != 0)
     labeled_mask, num_features = label(nan_mask)
     slices = find_objects(labeled_mask)
     Y, X = np.ogrid[:4088, :4088]
-    #xx, yy = np.arange(4088), np.arange(4088)
-    #X, Y = np.meshgrid(xx, yy)
     n = 0
     xb, yb = [], []
     for i, sl in enumerate(slices):
@@ -255,11 +239,8 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
                 # Find barycenter of the cluster
                 idnan = np.argwhere(nan_mask[yi:ye, xi:xe] == 1)
                 centroid = np.mean(idnan, axis=0)
-                #bX, bY = X[yi:ye, xi:xe], Y[yi:ye, xi:xe]
                 yb.append(yi+centroid[0])
                 xb.append(xi+centroid[1])
-                #yb.append(np.mean(bY[idnan]))
-                #xb.append(np.mean(bX[idnan]))
                 n += 1
 
     if n > 0:
