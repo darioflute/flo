@@ -145,9 +145,11 @@ def guidewindowPSF(x, y, psf, subimage):
     pring = psum1 - psum0
     normalization = (ring - back) / (pring - pback)
     
+    state = False
     if (normalization > 0) & (back1/back > 1.5):
         subimage[y0-9:y0+9, x0-9:x0+9] = br[y0-9:y0+9, x0-9:x0+9] * normalization + back
-    return subimage
+        state = True
+    return state, subimage
 
 
     
@@ -213,9 +215,11 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
             if np.hypot((xg-xx[i]), (yg-yy[i])) < 2:
                  # Star in the guide window
                  subimage = image[yg-17:yg+17, xg-17:xg+17]
-                 image[yg-17:yg+17, xg-17:xg+17] = guidewindowPSF(xg, yg, psf, subimage)
+                 state, newpsf = guidewindowPSF(xg, yg, psf, subimage)
                  # Put dq to 0
-                 dq[yg-17:yg+17, xg-17:xg+17] = 0
+                 if state:
+                     image[yg-17:yg+17, xg-17:xg+17] = newpsf
+                     dq[yg-17:yg+17, xg-17:xg+17] = 0
                  guidestar = True
             else:   
                 subimage = image[yy[i]-17:yy[i]+18, xx[i]-17:xx[i]+18]
@@ -227,9 +231,11 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
     if guidestar is False:
         print('No guide star in the guide window')
         subimage = image[yg-17:yg+17, xg-17:xg+17]
-        image[yg-17:yg+17, xg-17:xg+17] = guidewindowPSF(xg, yg, psf, subimage)
-        # Put dq to 0
-        dq[yg-17:yg+17, xg-17:xg+17] = 0
+        state, newpsf = guidewindowPSF(xg, yg, psf, subimage)
+        if state:
+            image[yg-17:yg+17, xg-17:xg+17] = newpsf
+            # Put dq to 0
+            dq[yg-17:yg+17, xg-17:xg+17] = 0
 
     # Now consider the clusters of uncorrected saturated pixels which are possible stars not in GAIA
     from scipy.ndimage import label, find_objects
