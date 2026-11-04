@@ -131,10 +131,7 @@ def guidewindowPSF(x, y, psf, subimage):
                                    subimage[y0+15:y0+17, x0-17:x0+17].ravel(),
                                    subimage[y0-15:y0+15, x0-17:x0-15].ravel(),
                                    subimage[y0-15:y0+15, x0+15:x0+17].ravel())))
-    
-    print('back 1', back1)
-    print('back 2', back)
-    
+        
     ring = sum1 - sum0
     psum0 = np.sum(br[y0-8:y0+8, x0-8:x0+8])
     psum1 = np.sum(br[y0-9:y0+9, x0-9:x0+9])
