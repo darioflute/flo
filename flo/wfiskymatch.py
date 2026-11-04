@@ -444,8 +444,8 @@ def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000,
         from roman_datamodels.dqflags import pixel
         idx = (dq & pixel.DO_NOT_USE.value) != 0
         data0[idx] = np.nan
-        idx = (dq & pixel.NO_LIN_CORR.value) != 0
-        data0[idx] = np.nan
+        #idx = (dq & pixel.NO_LIN_CORR.value) != 0
+        #data0[idx] = np.nan
     
     
     bkg_estimator = MedianBackground()
@@ -481,13 +481,13 @@ def maskSources(data, err=None, dq=None, block=50, fwhm=1.0, areathreshold=1000,
     idx = data0 < -3 * bkg.background_rms
     mask[idx] = True
     
-    # Mask bad pixels marked as "Do Not Use" or "No Lin Corr" if dq is available
+    # Mask bad pixels marked as "Do Not Use"  if dq is available
     if dq is not None:
         from roman_datamodels.dqflags import pixel
         idx = (dq & pixel.DO_NOT_USE.value) != 0
         mask[idx] = True
-        idx = (dq & pixel.NO_LIN_CORR.value) != 0
-        mask[idx] = True
+        #idx = (dq & pixel.NO_LIN_CORR.value) != 0
+        #mask[idx] = True
 
     # Search for clusters of uncorrected saturated pixels which are possible stars not in GAIA bright stars
     from scipy.ndimage import label, find_objects
@@ -557,12 +557,12 @@ def asdf2healpix(infile, outdir,nsparse=17,ncoverage=11,inpainting=False,savefit
     #                              'ROMAN.META.INSTRUMENT.NAME': meta.instrument.name,
     #                              'ROMAN.META.EXPOSURE.START_TIME': meta.exposure.start_time.isot}, 
     #                             observatory='roman', reftypes=['area'], ignore_cache=False)
-    # Consider the different area of pixels on the sky
-    # See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
+    ## Consider the different area of pixels on the sky
+    ## See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
     #with rdm.open(crds_result['area']) as pam:
     #    pamdata = pam.data.copy()
-    #data /= pamdata
-    #err /= pamdata
+    #data *= pamdata
+    #err *= pamdata
 
     # Convert data to MJy/sr
     data *= dn2mjy
@@ -670,7 +670,7 @@ def computeOverlaps(files):
     overlap = csc_array((data, (row, col)), shape=(nfiles,nfiles))
     return overlap
 
-def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
+def addOffset(L2, offset=0, verbose=False):
     """
     Add an offset to the data of a L2 WFI file
 
@@ -679,19 +679,19 @@ def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
     outdir:  name of output directory
     """
     import roman_datamodels as rdm
-    import os
+    #import os
     import crds
     
-    if output is None:
-        infile = os.path.abspath(L2)
-        path, filename = os.path.split(infile)
-        filename, ext = os.path.splitext(os.path.split(infile)[1])
-        if outdir is None:
-            output = os.path.join(path, filename[:-4]+'_off_cal'+ext)
-        else:
-            output = os.path.join(outdir, filename[:-4]+'_off_cal'+ext)
-            if verbose:
-                print('output ', output)
+    #if output is None:
+    #    infile = os.path.abspath(L2)
+    #    path, filename = os.path.split(infile)
+    #    filename, ext = os.path.splitext(os.path.split(infile)[1])
+    #    if outdir is None:
+    #        output = os.path.join(path, filename[:-4]+'_off_cal'+ext)
+    #    else:
+    #        output = os.path.join(outdir, filename[:-4]+'_off_cal'+ext)
+    #        if verbose:
+    #            print('output ', output)
 
     with rdm.open(L2) as dm:
         meta = dm.meta
@@ -701,14 +701,14 @@ def addOffset(L2, offset=0, output=None, outdir=None, verbose=False):
         #                              'ROMAN.META.INSTRUMENT.NAME': meta.instrument.name,
         #                              'ROMAN.META.EXPOSURE.START_TIME': meta.exposure.start_time.isot}, 
         #                             observatory='roman', reftypes=['area'], ignore_cache=False)
-        # Consider the different area of pixels on the sky
-        # See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
+        ## Consider the different area of pixels on the sky
+        ## See: https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/aperture_photometry/aperture_photometry.ipynb
         #with rdm.open(crds_result['area']) as pam:
         #    pamdata = pam.data.copy()
-        offsets = offset / dn2mjy #* pamdata
+        offsets = offset / dn2mjy #/ pamdata
         dm.data += offsets  # Add offsets in DN/s
-        #dm.data /= pamdata
-        #dm.err /= pamdata
-        dm.save(output)
+        #dm.data *= pamdata
+        #dm.err *= pamdata
+        dm.save(L2)
 
     return 1
