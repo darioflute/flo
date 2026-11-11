@@ -222,7 +222,7 @@ def desaturatePsf(L2, stars, output=None, minarea=1):
             
     # Now consider the clusters of uncorrected saturated pixels which are possible stars not in GAIA
     from scipy.ndimage import label, find_objects
-    nan_mask = np.isnan(image) & ((dq & pixel.SATURATED.value) != 0)
+    nan_mask = np.isnan(image) & ((dq & pixel.SATURATED.value) != 0) & ((dq & pixel.DO_NOT_USE) != 1)
     labeled_mask, num_features = label(nan_mask)
     slices = find_objects(labeled_mask)
     Y, X = np.ogrid[:4088, :4088]
