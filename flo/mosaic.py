@@ -128,7 +128,9 @@ def computeOrientation(wcs):
     return scale_x, theta_deg   
 
 
-def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir='./'):
+def make_cells_asn(files, crval1=None, crval2=None, angle=None, 
+                   ncell=5000, border=10, pixscale=0.10876549, outname='tile', refdir='./',
+                   nx=None, ny=None):
     """
     This code generates json files to reproject and coadd a list of files
     in a series of square tiles with the same center of projection.
@@ -165,6 +167,8 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
     import json
 
 
+    # Add border to the size of the cell
+    npix = ncell + 2 * border
 
     # Get centers and ra min,max and dec min,max for each file
 
@@ -190,18 +194,21 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
             cd, cr = computeOrientation(dm.meta.wcs)
             orientation.append(cr)
 
+
     # Compute the center of final mosaic as barycenter of the image centers
-    
-    crval1 = np.mean(ra0)
-    crval2 = np.mean(dec0)
+    if (crval1 is None) | (crval2 is None):
+        crval1 = np.mean(ra0)
+        crval2 = np.mean(dec0)
+        print(f'Center is [{crval1}, {crval2}]')
     
     # Compute the median orientation
-    
-    medorientation = np.nanmedian(np.array(orientation))
-    print(f'Median orientation is {medorientation} degrees')
+    if angle is None:
+        medorientation = np.nanmedian(np.array(orientation))
+        print(f'Median orientation is {medorientation} degrees')
+    else:
+        medorientation = angle
     
     # Find size of final mosaic (symmetric wrt the central coordinate)
-    
     dmax = max(decmax)
     dmin = min(decmin)
     amax = max(ramax)
@@ -231,23 +238,19 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
         x.extend([x1,x2,x3,x4])
         y.extend([y1,y2,y3,y4])
         
-    nx = max(x) - min(x)
-    ny = max(y) - min(y)
-    
-    
-    #da = max([amax-crval1, crval1-amin])
-    #dd = max([dmax-crval2, crval2-dmin])
-    #nx = 2 * da * np.cos(crval2 * np.pi / 180)  * 3600 / pixscale
-    #ny = 2 * dd * 3600 / pixscale
-    
-    # Find size of the cell
+    if (nx is None) | (ny is None):
+        nx = max(x) - min(x)
+        ny = max(y) - min(y)
+        print('nx, ny ', nx,ny)
+
+        
     if (nx < npix) & (ny < npix):
         print('There is no need to do smaller mosaics')
         return 0
     
     # Divide the mosaic in cells and save the associations as json asn files
-    ncol = np.ceil(np.ceil(nx)/npix)
-    nrow = np.ceil(np.ceil(ny)/npix)
+    ncol = np.ceil(np.ceil(nx)/ncell)
+    nrow = np.ceil(np.ceil(ny)/ncell)
     # Make them odd numbers to center first cell at 0,0
     ncol = int(ncol // 2 * 2 + 1)
     nrow = int(nrow // 2 * 2 + 1)
@@ -257,8 +260,10 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
     row -= nrow//2
     
     # Compute nx, ny
-    nx = ncol * npix
-    ny = nrow * npix
+    nx = ncol * ncell
+    ny = nrow * ncell
+    print('final nx,ny ', nx, ny)
+    
     
     # Astrometry of the tile
     x0t, y0t = (nx-1)/2 , (ny-1)/2
@@ -273,7 +278,7 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
 
     
     # Cell center
-    x0, y0 = col * npix + x0t, row * npix + y0t
+    x0, y0 = col * ncell + x0t, row * ncell + y0t
     # Cell corners
     hcellsize = npix // 2 
     x1, y1 = x0 - hcellsize, y0 - hcellsize
@@ -311,7 +316,8 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
                 ypix = y0t - y0[i,j] + npix2
                 target = namefmt.format(ra0_, dsign, dec0_, x0_, y0_)
                 cell_json = create_cell_json(target, xpix, ypix, crval1, crval2, 
-                                             a0[i,j], d0[i,j], medorientation, members, outname)
+                                             a0[i,j], d0[i,j], medorientation, members, outname,
+                                             nx=npix,ny=npix)
                 filename = outname + '_' + target + '.asn'
                 with io.open(filename, mode='w') as f:
                     str_= json.dumps(cell_json, indent=4, separators=(',', ': '), ensure_ascii=False)
@@ -437,7 +443,7 @@ def make_cells_asn(files, npix=5000, pixscale=0.10876549, outname='tile', refdir
         afout.tree['roman'] = skycellref
         afout.write_to(os.path.join(refdir, 'roman_wfi_skycells_0001.asdf')) 
         
-def stitchCells(files, outname = 'mosaic'):
+def stitchCells(files, outname = 'mosaic', crop=True):
     """
     
 
@@ -478,7 +484,7 @@ def stitchCells(files, outname = 'mosaic'):
         nx_ = int(file[-16:-14])
         ny_ = int(file[-13:-11])
         with rdm.open(file) as dm:
-            image[ny_ * 5000: ny_ * 5000 + 5000, nx_ * 5000: nx_ * 5000 + 5000] = dm.data
+            image[ny_ * 5000: ny_ * 5000 + 5000, nx_ * 5000: nx_ * 5000 + 5000] = dm.data[10:-10,10:-10]
             cdelt = dm.meta.wcsinfo['pixel_scale']
             crval1 = dm.meta.wcsinfo['ra_ref']
             crval2 = dm.meta.wcsinfo['dec_ref']
@@ -489,22 +495,27 @@ def stitchCells(files, outname = 'mosaic'):
     ctheta = np.cos(crota2 * np.pi/180)
     stheta = np.sin(crota2 * np.pi/180)
     
-    # crop image NaN borders
-    nans = np.isnan(image)
-    # Find rows and columns that are NOT completely NaN
-    valid_rows = ~np.all(nans, axis=1)
-    valid_cols = ~np.all(nans, axis=0)
-    if not np.any(valid_rows) or not np.any(valid_cols):
-        print('No valid rows or columns')
-        return 0
-    # Get min and max indices for non-NaN rows and columns
-    row_indices = np.where(valid_rows)[0]
-    col_indices = np.where(valid_cols)[0]
-    r_min, r_max = row_indices[0], row_indices[-1]
-    c_min, c_max = col_indices[0], col_indices[-1]
-    image = image[r_min : r_max + 1, c_min : c_max + 1]
-    crpix1 = nx/2 - c_min
-    crpix2 = ny/2 - r_min
+    if crop:
+        # crop image NaN borders
+        nans = np.isnan(image)
+        # Find rows and columns that are NOT completely NaN
+        valid_rows = ~np.all(nans, axis=1)
+        valid_cols = ~np.all(nans, axis=0)
+        if not np.any(valid_rows) or not np.any(valid_cols):
+            print('No valid rows or columns')
+            return 0
+        # Get min and max indices for non-NaN rows and columns
+        row_indices = np.where(valid_rows)[0]
+        col_indices = np.where(valid_cols)[0]
+        r_min, r_max = row_indices[0], row_indices[-1]
+        c_min, c_max = col_indices[0], col_indices[-1]
+        image = image[r_min : r_max + 1, c_min : c_max + 1]
+        crpix1 = nx/2 - c_min
+        crpix2 = ny/2 - r_min
+    else:
+        crpix1 = nx/2
+        crpix2 = ny/2
+        
 
     hdu = fits.PrimaryHDU(data=image)
     hdu.header['wcsaxes'] = 2
