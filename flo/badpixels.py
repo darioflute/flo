@@ -126,8 +126,7 @@ def makeBadPixelMask(nsca,vmin=-0.05,vmax=0.05,npix=100):
     return mask
 
 def maskBadPixels(calfile, indir='./Postcal', outdir='./Postcal'):
-    
-    from astropy.io import fits        
+           
     import roman_datamodels as rdm
     from roman_datamodels.dqflags import pixel
     import numpy as np
@@ -174,7 +173,7 @@ def maskBadPixels(calfile, indir='./Postcal', outdir='./Postcal'):
         if sca == '03':
             circles = [(270,1663,23), (864, 2047,35), (3404,2369,19)]
         elif sca == '05':
-            circles = [(2678,2896,23), (2771,4033,35), (2051,3771,25)]
+            circles = [(2678,2896,23), (2771,4033,35), (2051,3772,65)]
         elif sca == '08':
             circles = [(353,1766,16), (2134, 4027, 16)]
         elif sca == '13':
