@@ -66,7 +66,14 @@ def makeBadPixelMask(nsca,vmin=-0.05,vmax=0.05,npix=100):
             # Blank out guide windows
             x1, x2, y1, y2 = guidewindow(dm.meta.guide_star, dm.meta.instrument.detector)            
             data[y1:y2,x1:x2] = np.nan
+            # Ghost of guide window 
+            if sca == '12':
+                xgh1, xgh2 = 2647, 2667
+                ygh1, ygh2 = y1, y2-1            
+                # NaN the elements
+                data[ygh1:ygh2,xgh1:xgh2] = np.nan           
             cube[i] = data #- np.nanmedian(data.ravel())
+            
     
     minimage = np.nanmin(cube, axis=0)
     minimage -= np.nanmedian(minimage.ravel())
@@ -104,14 +111,17 @@ def makeBadPixelMask(nsca,vmin=-0.05,vmax=0.05,npix=100):
     elif sca == '05':
         circles = [(2678,2896,23), (2771,4033,35), (2051,3771,66)]
     elif sca == '08':
-        circles = [(353,1766,16), (2134, 4027, 145)]
+        #circles = [(353,1766,16), (2134, 4027, 145)]
+        circles = [(353,1766,16), (2134, 4027, 16)]
+    elif sca == '10':
+            circles = [(2954,334,13)]
     elif sca == '13':
         circles = [(3420,2255, 46)]
     elif sca == '14':
         circles = [(963, 1526, 36)]
     elif sca == '18':
         circles = [(1291,3231,21)]
-    
+   
     if len(circles) > 0:
         for circle in circles:
             Yc, Xc, r = circle[0], circle[1], circle[2]
@@ -128,6 +138,7 @@ def makeBadPixelMask(nsca,vmin=-0.05,vmax=0.05,npix=100):
 def maskBadPixels(calfile, indir='./Postcal', outdir='./Postcal'):
            
     import roman_datamodels as rdm
+    from astropy.io import fits
     from roman_datamodels.dqflags import pixel
     import numpy as np
     import os
@@ -165,6 +176,11 @@ def maskBadPixels(calfile, indir='./Postcal', outdir='./Postcal'):
             dm.data[ygh1:ygh2,xgh1:xgh2] = np.nan
             # Change the dq to 'do not use'
             dm.dq[ygh1:ygh2,xgh1:xgh2] |= pixel.DO_NOT_USE.value
+            
+        # Bad pixels in SCA 1
+        #if sca == '01':
+        #    dm.data[4060:,2070:2070+1200] = np.nan
+        #    dm.dq[4060:,2070:2070+1200] |= pixel.DO_NOT_USE.value
 
         
         # Add circles of bad pixels
@@ -176,6 +192,8 @@ def maskBadPixels(calfile, indir='./Postcal', outdir='./Postcal'):
             circles = [(2678,2896,23), (2771,4033,35), (2051,3772,65)]
         elif sca == '08':
             circles = [(353,1766,16), (2134, 4027, 16)]
+        elif sca == '10':
+            circles = [(2954,334,13)]
         elif sca == '13':
             circles = [(3420,2255, 46)]
         elif sca == '14':
@@ -191,6 +209,7 @@ def maskBadPixels(calfile, indir='./Postcal', outdir='./Postcal'):
                 cmask = (X - Xc)**2 + (Y - Yc)**2 <= r**2
                 dm.data[cmask] = np.nan
                 dm.dq[cmask] |= pixel.DO_NOT_USE.value
+                dm.dq[cmask] &= ~pixel.SATURATED.value
  
                 
         # Classify as DO NOT USE all pixels with NaNs
@@ -198,12 +217,16 @@ def maskBadPixels(calfile, indir='./Postcal', outdir='./Postcal'):
         dm.dq[rows,cols] |= pixel.DO_NOT_USE.value
                 
         # Open improved bad pixel mask
-        #badpixfile = 'badpixels_'+sca+'.fits.gz'
-        #with fits.open(os.path.join(path, badpixfile)) as f:
-        #    mask = f[0].data
-        #    idx = np.where(mask == 1)
-        #    dm.data[idx] = np.nan
-        #    dm.dq[idx] |= pixel.DO_NOT_USE.value        
+        badpixfile = 'badpixels_'+sca+'.fits'
+        # Check if file has been created
+        if os.path.isfile(badpixfile):
+            with fits.open(os.path.join(badpixfile)) as f:
+                mask = f[0].data
+                idx = np.where(mask == 1)
+                dm.data[idx] = np.nan
+                dm.dq[idx] |= pixel.DO_NOT_USE.value 
+                dm.dq[idx] &= ~pixel.SATURATED.value
+                
         # Save file
         dm.save(os.path.join(outdir, calfile))
         
